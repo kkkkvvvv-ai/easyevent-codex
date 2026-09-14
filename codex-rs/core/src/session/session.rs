@@ -263,6 +263,7 @@ impl SessionConfiguration {
             .map(|config| config.permission_profile.clone())
             .unwrap_or_else(|| self.permission_profile_state.snapshot());
         ThreadConfigSnapshot {
+            active_model: None,
             model: self.step_settings.collaboration_mode.model().to_string(),
             model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
             service_tier: self.step_settings.service_tier.clone(),
@@ -304,6 +305,7 @@ impl SessionConfiguration {
         environment_selections: &[TurnEnvironmentSelection],
     ) -> ThreadSettingsSnapshot {
         ThreadSettingsSnapshot {
+            active_model: None,
             model: self.step_settings.collaboration_mode.model().to_string(),
             model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
             service_tier: self.step_settings.service_tier.clone(),

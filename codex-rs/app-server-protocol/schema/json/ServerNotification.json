@@ -3061,6 +3061,21 @@
       ],
       "type": "object"
     },
+    "ModelSelection": {
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "modelProvider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "modelProvider"
+      ],
+      "type": "object"
+    },
     "ModelVerification": {
       "enum": [
         "trustedAccessForCyber"
@@ -5873,6 +5888,16 @@
     },
     "ThreadSettings": {
       "properties": {
+        "activeModel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "activePermissionProfile": {
           "anyOf": [
             {

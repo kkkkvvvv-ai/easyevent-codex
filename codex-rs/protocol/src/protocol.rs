@@ -814,6 +814,9 @@ pub struct InterAgentCommunication {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub id: Option<ResponseItemId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model_source: Option<ModelOutputSource>,
     pub author: AgentPath,
     pub recipient: AgentPath,
     #[serde(default)]
@@ -838,6 +841,7 @@ impl InterAgentCommunication {
     ) -> Self {
         Self {
             id: None,
+            model_source: None,
             author,
             recipient,
             other_recipients,
@@ -857,6 +861,7 @@ impl InterAgentCommunication {
     ) -> Self {
         Self {
             id: None,
+            model_source: None,
             author,
             recipient,
             other_recipients,
@@ -877,6 +882,7 @@ impl InterAgentCommunication {
     pub fn to_response_input_item(&self) -> ResponseInputItem {
         let mut communication = self.clone();
         communication.id = None;
+        communication.model_source = None;
         communication.internal_chat_message_metadata_passthrough = None;
         ResponseInputItem::Message {
             role: "assistant".to_string(),
@@ -2207,6 +2213,10 @@ pub struct ThreadSettingsAppliedEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct ThreadSettingsSnapshot {
+    /// Last successfully activated model, distinct from saved next-turn defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub active_model: Option<ProviderModelSelection>,
     pub model: String,
     pub model_provider_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3305,6 +3315,12 @@ pub struct ModelOutputSource {
     pub provider_id: String,
     pub model: String,
     pub identity: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+pub struct ProviderModelSelection {
+    pub model_provider: String,
+    pub model: String,
 }
 
 impl TurnContextItem {
@@ -4663,6 +4679,7 @@ mod tests {
     #[test]
     fn inter_agent_communication_response_input_item_preserves_commentary_phase() {
         let mut communication = InterAgentCommunication {
+            model_source: None,
             id: Some(ResponseItemId::with_suffix("amsg", "1")),
             author: AgentPath::root(),
             recipient: AgentPath::root().join("reviewer").expect("recipient path"),

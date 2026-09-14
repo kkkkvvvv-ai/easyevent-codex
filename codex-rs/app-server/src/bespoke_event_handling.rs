@@ -1223,9 +1223,19 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
         }
         EventMsg::ThreadRolledBack(_) | EventMsg::ThreadQueueChanged(_) => {}
-        EventMsg::ThreadSettingsApplied(_) => {
-            let thread_settings =
+        EventMsg::ThreadSettingsApplied(event) => {
+            let mut thread_settings =
                 thread_settings_from_config_snapshot(&conversation.config_snapshot().await);
+            thread_settings.active_model = event.thread_settings.active_model.map(|active| {
+                codex_app_server_protocol::ModelSelection {
+                    model_provider: active.model_provider,
+                    model: active.model,
+                }
+            });
+            thread_settings.model = event.thread_settings.model;
+            thread_settings.model_provider = event.thread_settings.model_provider_id;
+            thread_settings.effort = event.thread_settings.reasoning_effort;
+            thread_settings.collaboration_mode = event.thread_settings.collaboration_mode;
             let changed = {
                 let mut state = thread_state.lock().await;
                 state.note_thread_settings(thread_settings.clone())

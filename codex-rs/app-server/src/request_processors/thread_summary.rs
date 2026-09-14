@@ -176,6 +176,12 @@ pub(crate) fn thread_settings_from_config_snapshot(
     config_snapshot: &ThreadConfigSnapshot,
 ) -> ThreadSettings {
     ThreadSettings {
+        active_model: config_snapshot.active_model.as_ref().map(|active| {
+            codex_app_server_protocol::ModelSelection {
+                model_provider: active.model_provider.clone(),
+                model: active.model.clone(),
+            }
+        }),
         disabled_plugin_ids: config_snapshot.disabled_plugin_ids.clone(),
         cwd: config_snapshot.cwd().clone(),
         approval_policy: config_snapshot.approval_policy.into(),

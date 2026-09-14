@@ -291,12 +291,23 @@ pub struct ThreadSettingsUpdateParams {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct ThreadSettingsUpdateResponse {}
+pub struct ThreadSettingsUpdateResponse {
+    pub active_model: Option<ModelSelection>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ModelSelection {
+    pub model_provider: String,
+    pub model: String,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadSettings {
+    pub active_model: Option<ModelSelection>,
     /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
     #[serde(default)]
     pub disabled_plugin_ids: Vec<String>,

@@ -2858,6 +2858,14 @@ class ModelSafetyBufferingUpdatedNotification(BaseModel):
     use_cases: Annotated[list[str], Field(alias="useCases")]
 
 
+class ModelSelection(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    model: str
+    model_provider: Annotated[str, Field(alias="modelProvider")]
+
+
 class ModelServiceTier(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -9977,6 +9985,7 @@ class ThreadSettings(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
+    active_model: Annotated[ModelSelection | None, Field(alias="activeModel")] = None
     active_permission_profile: Annotated[
         ActivePermissionProfile | None, Field(alias="activePermissionProfile")
     ] = None

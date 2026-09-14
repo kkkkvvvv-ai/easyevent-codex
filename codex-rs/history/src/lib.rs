@@ -46,6 +46,9 @@ pub struct ResponseItemEnvelope {
 ///
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 pub struct CodexHarnessMetadata {
+    /// Prompt-only tool repair IDs are harness-owned and portable across endpoints.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub synthesized_tool_output: bool,
     /// Captured producer of provider-owned state; absent in legacy transcripts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_source: Option<codex_protocol::protocol::ModelOutputSource>,

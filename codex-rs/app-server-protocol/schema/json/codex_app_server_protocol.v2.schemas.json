@@ -11708,6 +11708,21 @@
       "title": "ModelSafetyBufferingUpdatedNotification",
       "type": "object"
     },
+    "ModelSelection": {
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "modelProvider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "modelProvider"
+      ],
+      "type": "object"
+    },
     "ModelServiceTier": {
       "properties": {
         "description": {
@@ -21746,6 +21761,16 @@
     },
     "ThreadSettings": {
       "properties": {
+        "activeModel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "activePermissionProfile": {
           "anyOf": [
             {

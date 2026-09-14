@@ -1045,7 +1045,16 @@ impl TurnRequestProcessor {
             .map_err(|err| internal_error(format!("failed to update thread settings: {err}")))?;
         }
 
-        Ok(ThreadSettingsUpdateResponse {})
+        Ok(ThreadSettingsUpdateResponse {
+            active_model: thread
+                .thread_settings_snapshot()
+                .await
+                .active_model
+                .map(|active| codex_app_server_protocol::ModelSelection {
+                    model_provider: active.model_provider,
+                    model: active.model,
+                }),
+        })
     }
 
     async fn thread_inject_items_response_inner(

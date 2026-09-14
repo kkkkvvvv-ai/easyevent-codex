@@ -13,6 +13,7 @@ fn thread_settings_for_test(
     codex_app_server_protocol::ThreadSettingsUpdatedNotification {
         thread_id: thread_id.to_string(),
         thread_settings: codex_app_server_protocol::ThreadSettings {
+            active_model: None,
             disabled_plugin_ids: Vec::new(),
             cwd: test_path_buf("/tmp/thread-settings").abs(),
             approval_policy: AskForApproval::OnRequest,

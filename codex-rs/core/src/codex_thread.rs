@@ -80,6 +80,7 @@ static LIVE_THREADS: Gauge = Gauge::new("core.threads.live");
 
 #[derive(Clone, Debug)]
 pub struct ThreadConfigSnapshot {
+    pub active_model: Option<codex_protocol::protocol::ProviderModelSelection>,
     pub model: String,
     pub model_provider_id: String,
     pub service_tier: Option<String>,
