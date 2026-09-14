@@ -1,3 +1,5 @@
+const { pathToFileURL } = require("node:url");
+
 /** @type {import('jest').Config} */
 module.exports = {
   preset: "ts-jest/presets/default-esm",
@@ -22,7 +24,9 @@ module.exports = {
             {
               path: "ts-jest-mock-import-meta",
               // Workaround for meta.url not working in jest
-              options: { metaObjectReplacement: { url: "file://" + __dirname + "/dist/index.js" } },
+              options: {
+                metaObjectReplacement: { url: pathToFileURL(__dirname + "/dist/index.js").href },
+              },
             },
           ],
         },
