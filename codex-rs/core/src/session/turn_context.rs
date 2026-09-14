@@ -302,6 +302,7 @@ pub struct TurnContext {
     /// Turn-wide telemetry; model-attributed step work should use `StepContext::session_telemetry`.
     pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) provider: SharedModelProvider,
+    pub(crate) model_runtime: Arc<super::model_runtime::ModelRuntime>,
     pub(crate) session_source: SessionSource,
     pub(crate) history_mode: ThreadHistoryMode,
     pub(crate) parent_thread_id: Option<ThreadId>,
@@ -600,6 +601,7 @@ impl TurnContext {
             current_settings: ArcSwap::from(step_settings),
             session_telemetry,
             provider: self.provider.clone(),
+            model_runtime: self.model_runtime.clone(),
             session_source: self.session_source.clone(),
             history_mode: self.history_mode,
             parent_thread_id: self.parent_thread_id,
@@ -656,7 +658,7 @@ impl TurnContext {
         #[allow(deprecated)]
         let cwd = self.cwd.clone();
         TurnContextItem {
-            model_source: None,
+            model_source: self.model_runtime.source_for(&self.model_info().slug).ok(),
             turn_id: Some(self.sub_id.clone()),
             root_turn_id: self.turn_metadata_state.root_turn_id(),
             disabled_plugin_ids: Some(self.disabled_plugin_ids.clone()),
@@ -717,6 +719,11 @@ fn local_time_context() -> (String, String) {
             "Etc/UTC".to_string(),
         ),
     }
+}
+
+pub(super) enum ModelDefaults {
+    NextUserTurn,
+    Active,
 }
 
 impl Session {
@@ -793,7 +800,7 @@ impl Session {
         session_id: SessionId,
         auth_manager: Option<Arc<AuthManager>>,
         session_telemetry: &SessionTelemetry,
-        provider: SharedModelProvider,
+        model_runtime: Arc<super::model_runtime::ModelRuntime>,
         session_configuration: &SessionConfiguration,
         multi_agent_version: MultiAgentVersion,
         user_shell: &shell::Shell,
@@ -874,7 +881,8 @@ impl Session {
             disabled_plugin_ids: session_configuration.disabled_plugin_ids.clone(),
             current_settings: ArcSwap::from(step_settings),
             session_telemetry: session_telemetry_for_context,
-            provider,
+            provider: model_runtime.provider.clone(),
+            model_runtime,
             session_source,
             history_mode: session_configuration.history_mode,
             parent_thread_id: session_configuration.parent_thread_id,
@@ -910,7 +918,13 @@ impl Session {
         options: NewTurnContextOptions,
     ) -> CodexResult<(Arc<TurnContext>, ThreadSettingsSnapshot)> {
         let Some((turn_context, snapshot)) = self
-            .new_turn_with_sub_id_if(sub_id, updates, options, |_, _| true)
+            .new_turn_with_sub_id_if(
+                sub_id,
+                updates,
+                options,
+                ModelDefaults::NextUserTurn,
+                |_, _| true,
+            )
             .await?
         else {
             unreachable!("unconditional turn construction must accept valid settings");
@@ -929,6 +943,7 @@ impl Session {
         sub_id: String,
         updates: SessionSettingsUpdate,
         options: NewTurnContextOptions,
+        model_defaults: ModelDefaults,
         should_start: impl FnOnce(&SessionConfiguration, &SessionConfiguration) -> bool + Send,
     ) -> CodexResult<Option<(Arc<TurnContext>, ThreadSettingsSnapshot)>> {
         let service_tier_for_turn = updates.service_tier_for_turn.clone();
@@ -950,6 +965,26 @@ impl Session {
             }
         };
         let mut configuration = commit.configuration;
+        if matches!(model_defaults, ModelDefaults::Active) {
+            let state = self.state.lock().await;
+            if let (Some(runtime), Some(settings)) =
+                (&state.active_model_runtime, &state.active_model_settings)
+            {
+                let source = runtime.source_for(&settings.model_info.slug)?;
+                configuration.provider = runtime.provider.clone();
+                let config = Arc::make_mut(&mut configuration.original_config_do_not_use);
+                config.model_provider_id = source.provider_id;
+                config.model_provider = runtime.provider.info().clone();
+                let selected = Arc::make_mut(&mut configuration.step_settings);
+                selected.collaboration_mode = selected.collaboration_mode.with_updates(
+                    Some(settings.model_info.slug.clone()),
+                    Some(settings.reasoning_effort().cloned()),
+                    None,
+                );
+                selected.reasoning_summary = Some(settings.reasoning_summary);
+                selected.service_tier = settings.service_tier.clone();
+            }
+        }
         // Apply the override only to the turn's copy, after persisting thread settings.
         if let Some(service_tier) = service_tier_for_turn {
             Arc::make_mut(&mut configuration.step_settings).service_tier = Some(service_tier);
@@ -1014,10 +1049,11 @@ impl Session {
             .map(TurnEnvironment::permission_profile)
             .cloned()
             .unwrap_or_else(|| session_configuration.permission_profile());
+        let model_runtime = self.prepare_model_runtime(&session_configuration).await;
         let model_info = session_configuration
             .step_settings
             .resolve_model_info(
-                self.services.models_manager().as_ref(),
+                model_runtime.models.as_ref(),
                 &session_configuration.model_info_overrides,
                 self.features.enabled(Feature::Personality),
             )
@@ -1079,7 +1115,7 @@ impl Session {
             self.session_id(),
             Some(Arc::clone(&self.services.auth_manager)),
             &self.services.session_telemetry,
-            session_configuration.provider.clone(),
+            model_runtime.clone(),
             &session_configuration,
             multi_agent_version,
             self.services.user_shell.as_ref(),
@@ -1087,7 +1123,7 @@ impl Session {
             self.services.main_execve_wrapper_exe.as_ref(),
             per_turn_config,
             step_settings,
-            &self.services.models_manager(),
+            &model_runtime.models,
             self.services
                 .network_proxy
                 .load_full()

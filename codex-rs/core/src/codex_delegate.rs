@@ -66,9 +66,9 @@ pub(crate) async fn run_codex_thread_interactive(
         ));
     }
     config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
-    config.model_provider.supports_websockets &= parent_session
-        .services
-        .model_client()
+    config.model_provider.supports_websockets &= parent_ctx
+        .model_runtime
+        .client
         .responses_websocket_enabled();
 
     let conversation_history = initial_history.unwrap_or(InitialHistory::New);

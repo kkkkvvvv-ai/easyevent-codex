@@ -66,6 +66,11 @@ impl ReasoningEffortPin {
 
 /// Persistent, session-scoped state previously stored directly on `Session`.
 pub(crate) struct SessionState {
+    pub(crate) active_model_runtime:
+        Option<std::sync::Arc<crate::session::model_runtime::ModelRuntime>>,
+    pub(crate) active_model_settings:
+        Option<std::sync::Arc<crate::session::step_settings::ResolvedStepSettings>>,
+    pub(crate) active_model_source: Option<codex_protocol::protocol::ModelOutputSource>,
     pub(crate) session_configuration: SessionConfiguration,
     /// Plugin selection of the last admitted task; settings updates take effect on the next task.
     pub(crate) active_disabled_plugin_ids: Vec<String>,
@@ -114,6 +119,9 @@ impl SessionState {
     ) -> Self {
         Self {
             active_disabled_plugin_ids: Vec::new(),
+            active_model_runtime: None,
+            active_model_settings: None,
+            active_model_source: None,
             session_configuration,
             base_instructions_provenance: None,
             history,

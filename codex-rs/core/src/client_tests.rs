@@ -1362,3 +1362,22 @@ async fn non_chatgpt_codex_endpoints_omit_attestation_generation() {
     );
     assert_eq!(attestation_calls.load(Ordering::Relaxed), 0);
 }
+
+#[test]
+fn prewarmed_session_requires_same_transport_and_captured_auth_owner() {
+    let mut original = test_model_client(SessionSource::Cli);
+    original.expected_auth_owner = Some(7);
+    let prewarmed = original.new_session();
+    let refreshed = original.clone();
+    let mut changed_account = original;
+    changed_account.expected_auth_owner = Some(8);
+    let other_transport = test_model_client(SessionSource::Cli);
+    assert_eq!(
+        (
+            prewarmed.belongs_to(&refreshed),
+            prewarmed.belongs_to(&changed_account),
+            prewarmed.belongs_to(&other_transport)
+        ),
+        (true, false, false),
+    );
+}

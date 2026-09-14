@@ -64,8 +64,11 @@ impl ManagedReviewerThreads {
             anyhow::bail!("Codex delegates require approval policy `never`");
         }
         config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
-        config.model_provider.supports_websockets &=
-            parent.services.model_client().responses_websocket_enabled();
+        config.model_provider.supports_websockets &= context
+            .turn()
+            .model_runtime
+            .client
+            .responses_websocket_enabled();
         let mut thread_extension_init = codex_extension_api::ExtensionDataInit::default();
         thread_extension_init.insert(codex_extension_api::SessionIsolation::Isolated);
         let options = StartThreadOptions {

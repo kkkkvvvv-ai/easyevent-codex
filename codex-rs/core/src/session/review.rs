@@ -15,17 +15,17 @@ pub(super) async fn spawn_review_thread(
         .review_model
         .clone()
         .unwrap_or_else(|| parent_turn_context.model_info().slug.clone());
-    let available_models = sess
-        .services
-        .models_manager()
+    let available_models = parent_turn_context
+        .model_runtime
+        .models
         .list_models(
             RefreshStrategy::OnlineIfUncached,
             config.http_client_factory(),
         )
         .await;
-    let review_model_info = sess
-        .services
-        .models_manager()
+    let review_model_info = parent_turn_context
+        .model_runtime
+        .models
         .get_model_info(&model, &config.to_models_manager_config())
         .await;
     // For reviews, disable web_search and view_image regardless of global settings.
@@ -85,12 +85,16 @@ pub(super) async fn spawn_review_thread(
         (
             state.session_configuration.forked_from_thread_id,
             state.session_configuration.thread_source.clone(),
-            state
-                .session_configuration
-                .step_settings
+            parent_turn_context
+                .initial_settings
+                .selected()
                 .service_tier
                 .clone()
-                .or_else(|| config.service_tier.clone()),
+                .or_else(|| {
+                    (config.model_provider_id == parent_turn_context.config.model_provider_id)
+                        .then(|| config.service_tier.clone())
+                        .flatten()
+                }),
         )
     };
     let auto_review_enabled = crate::guardian::routes_approval_policy_to_guardian(
@@ -151,6 +155,7 @@ pub(super) async fn spawn_review_thread(
         current_settings: ArcSwap::from(step_settings),
         session_telemetry: session_telemetry_for_context,
         provider: provider_for_context,
+        model_runtime: parent_turn_context.model_runtime.clone(),
         session_source,
         history_mode: parent_turn_context.history_mode,
         parent_thread_id: parent_turn_context.parent_thread_id,

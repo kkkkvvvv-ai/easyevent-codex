@@ -383,10 +383,6 @@ async fn daybreak_discards_in_flight_account_changes_without_apps() -> Result<()
                 ),
                 responses::ev_completed("resp-2"),
             ]),
-            responses::sse(vec![
-                responses::ev_assistant_message("done", "done"),
-                responses::ev_completed("resp-3"),
-            ]),
         ],
     )
     .await;
@@ -424,10 +420,13 @@ async fn daybreak_discards_in_flight_account_changes_without_apps() -> Result<()
     let (result, switched) = tokio::join!(call, switch);
     switched?;
     response_task.await??;
-    wait_for_event(&test.codex, |event| {
+    let completion = wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
+    assert!(
+        matches!(completion, EventMsg::TurnComplete(event) if event.error.as_ref().is_some_and(|error| error.message.contains("Provider account changed")))
+    );
     test.codex.shutdown_and_wait().await?;
     let EventMsg::McpToolCallEnd(result) = result else {
         unreachable!()

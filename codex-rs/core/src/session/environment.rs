@@ -149,6 +149,9 @@ impl Session {
                     requirement_source: codex_config::RequirementSource::Unknown,
                 }
             })?;
+            if config.model_provider_id != *id {
+                config.model_catalog = None;
+            }
             config.model_provider_id = id.clone();
             config.model_provider = info.clone();
             candidate.provider = codex_model_provider::create_model_provider(

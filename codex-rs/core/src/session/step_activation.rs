@@ -372,7 +372,7 @@ impl Session {
             .apply_update(
                 update,
                 &constraints,
-                self.services.models_manager().as_ref(),
+                turn_context.model_runtime.models.as_ref(),
                 &overrides,
                 self.features.enabled(Feature::Personality),
                 self.features.enabled(Feature::FastMode),

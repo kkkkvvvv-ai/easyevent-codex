@@ -158,6 +158,7 @@ impl PreparedTurnInputSettings {
                         submission_id.clone(),
                         updates,
                         options,
+                        super::turn_context::ModelDefaults::Active,
                         |current, proposed| kind.permits_settings(current, proposed),
                     )
                     .await?

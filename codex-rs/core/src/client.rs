@@ -246,6 +246,7 @@ impl RequestRouteTelemetry {
 /// call site.
 #[derive(Debug, Clone)]
 pub struct ModelClient {
+    expected_auth_owner: Option<u64>,
     state: Arc<ModelClientState>,
     agent_identity_policy: AgentIdentityAuthPolicy,
     prompt_cache_key_override: Option<String>,
@@ -422,6 +423,19 @@ fn sideband_websocket_auth_headers(api_auth: &dyn AuthProvider) -> ApiHeaderMap 
 }
 
 impl ModelClient {
+    pub(crate) fn capture_auth_owner(mut self) -> Self {
+        self.expected_auth_owner = self
+            .state
+            .provider
+            .info()
+            .requires_openai_auth
+            .then(|| self.auth_owner_generation())
+            .flatten();
+        self
+    }
+    pub(crate) fn provider(&self) -> &SharedModelProvider {
+        &self.state.provider
+    }
     /// A provider switch starts a fresh transport and authentication session.
     pub(crate) fn with_provider(
         &self,
@@ -508,6 +522,7 @@ impl ModelClient {
                 agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
             }),
+            expected_auth_owner: None,
             agent_identity_policy,
             prompt_cache_key_override: None,
             free_guardian_enabled: false,
@@ -1011,6 +1026,17 @@ impl ModelClient {
                 agent_identity_session_fallback: self.state.agent_identity_session_fallback.clone(),
             })
             .await?;
+        if self
+            .expected_auth_owner
+            .is_some_and(|expected| auth_owner_generation != Some(expected))
+            || self.expected_auth_owner.is_some()
+                && self.auth_owner_generation() != auth_owner_generation
+        {
+            return Err(CodexErr::InvalidRequest(
+                "Provider account changed during this turn; reselect the model before continuing"
+                    .into(),
+            ));
+        }
         Ok(CurrentClientSetup {
             auth,
             auth_owner_generation,
@@ -1254,6 +1280,10 @@ impl Drop for ModelClientSession {
 }
 
 impl ModelClientSession {
+    pub(crate) fn belongs_to(&self, client: &ModelClient) -> bool {
+        Arc::ptr_eq(&self.client.state, &client.state)
+            && self.client.expected_auth_owner == client.expected_auth_owner
+    }
     fn reset_websocket_session(&mut self) {
         self.websocket_session.connection = None;
         self.websocket_session.endpoint = None;
