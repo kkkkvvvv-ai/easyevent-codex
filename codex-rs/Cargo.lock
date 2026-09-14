@@ -4021,6 +4021,7 @@ dependencies = [
  "codex-protocol",
  "codex-response-debug-context",
  "codex-utils-redacted-string",
+ "futures",
  "http 1.4.0",
  "pretty_assertions",
  "serde",
