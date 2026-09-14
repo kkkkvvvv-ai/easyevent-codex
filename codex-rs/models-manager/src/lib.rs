@@ -4,6 +4,8 @@ pub(crate) mod config;
 pub mod manager;
 pub mod model_info;
 pub mod model_presets;
+mod responses_models;
+pub use responses_models::hosted_responses_model;
 pub mod test_support;
 
 pub use codex_protocol::auth::AuthMode;

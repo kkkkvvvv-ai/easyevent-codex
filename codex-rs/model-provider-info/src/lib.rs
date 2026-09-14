@@ -26,6 +26,12 @@ use std::path::Component;
 use std::path::Path;
 use std::time::Duration;
 
+mod responses_presets;
+pub use responses_presets::RESPONSES_PROVIDER_PRESETS;
+pub use responses_presets::ResponsesProviderPreset;
+pub use responses_presets::responses_preset_for_info;
+pub use responses_presets::responses_provider_preset;
+
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;
 const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;
 const DEFAULT_REQUEST_MAX_RETRIES: u64 = 4;
@@ -618,6 +624,11 @@ pub fn built_in_model_providers(
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
+    .chain(
+        RESPONSES_PROVIDER_PRESETS
+            .iter()
+            .map(|preset| (preset.id.to_string(), preset.provider_info())),
+    )
     .collect()
 }
 
@@ -631,7 +642,10 @@ pub fn merge_configured_model_providers(
     configured_model_providers: HashMap<String, ModelProviderInfo>,
 ) -> Result<HashMap<String, ModelProviderInfo>, String> {
     for (key, mut provider) in configured_model_providers {
-        if matches!(
+        if responses_provider_preset(&key).is_some() {
+            // Preserve explicit custom configuration rather than silently replacing it.
+            model_providers.insert(key, provider);
+        } else if matches!(
             key.as_str(),
             AMAZON_BEDROCK_PROVIDER_ID | AMAZON_BEDROCK_RUNTIME_PROVIDER_ID
         ) {

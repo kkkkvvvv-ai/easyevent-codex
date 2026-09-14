@@ -321,7 +321,13 @@ pub fn create_model_provider(
     provider_info: ModelProviderInfo,
     auth_manager: Option<Arc<AuthManager>>,
 ) -> SharedModelProvider {
-    if provider_info.is_amazon_bedrock() {
+    if let Some(preset) = codex_model_provider_info::responses_preset_for_info(&provider_info) {
+        Arc::new(crate::hosted_responses::HostedResponsesProvider {
+            info: provider_info,
+            preset,
+            credentials: auth_manager.map(|manager| manager.provider_credential_store()),
+        })
+    } else if provider_info.is_amazon_bedrock() {
         Arc::new(AmazonBedrockModelProvider::new(provider_info, auth_manager))
     } else {
         Arc::new(ConfiguredModelProvider::new(provider_info, auth_manager))

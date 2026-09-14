@@ -1,6 +1,11 @@
 mod amazon_bedrock;
 mod auth;
 mod bearer_auth_provider;
+mod hosted_responses;
+mod responses_catalog;
+pub use hosted_responses::recommended_responses_models;
+pub use responses_catalog::cache_responses_models;
+pub use responses_catalog::cached_responses_models;
 mod models_endpoint;
 mod models_identity;
 mod provider;

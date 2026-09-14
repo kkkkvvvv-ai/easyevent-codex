@@ -2132,6 +2132,15 @@ fn default_agent_identity_authapi_base_url() -> Option<String> {
 }
 
 impl AuthManager {
+    /// Storage for endpoint-scoped third-party keys, separate from OpenAI login.
+    pub fn provider_credential_store(&self) -> super::ProviderCredentialStore {
+        super::ProviderCredentialStore::new(
+            self.codex_home.clone(),
+            self.auth_credentials_store_mode,
+            self.keyring_backend_kind,
+        )
+    }
+
     /// Create a new manager loading the initial auth using the provided
     /// preferred auth method. Errors loading auth are swallowed; `auth()` will
     /// simply return `None` in that case so callers can treat it as an
