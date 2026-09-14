@@ -3238,6 +3238,9 @@ pub struct TurnContextNetworkItem {
 /// latest durable baseline.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
 pub struct TurnContextItem {
+    /// Producer identity, independent of model defaults selected for the next turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_source: Option<ModelOutputSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
     /// Root turn that owns this subagent turn's attribution.
@@ -3294,6 +3297,14 @@ pub struct TurnContextItem {
     // read by context reconstruction and should be removed in a future schema
     // cleanup.
     pub summary: ReasoningSummaryConfig,
+}
+
+/// Origin of model-owned history. Identity contains a digest, never credentials.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+pub struct ModelOutputSource {
+    pub provider_id: String,
+    pub model: String,
+    pub identity: String,
 }
 
 impl TurnContextItem {
@@ -6095,6 +6106,7 @@ mod tests {
     #[test]
     fn turn_context_item_serializes_network_when_present() -> Result<()> {
         let item = TurnContextItem {
+            model_source: None,
             turn_id: None,
             root_turn_id: None,
             disabled_plugin_ids: None,

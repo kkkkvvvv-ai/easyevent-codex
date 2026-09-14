@@ -202,6 +202,11 @@ fn response_item_envelope_stores_metadata_beside_rollout_payload() -> Result<()>
         item: RolloutItem::ResponseItem(ResponseItemEnvelope {
             item: response_item.clone(),
             metadata: Some(CodexHarnessMetadata {
+                model_source: Some(codex_protocol::protocol::ModelOutputSource {
+                    provider_id: "provider-a".into(),
+                    model: "model-a".into(),
+                    identity: "identity-a".into(),
+                }),
                 client_authored: true,
                 history_truncation_token_limit: Some(20_000),
                 inherited_user_message: true,
@@ -219,6 +224,9 @@ fn response_item_envelope_stores_metadata_beside_rollout_payload() -> Result<()>
             "type": "response_item",
             "payload": response_item,
             "metadata": {
+                "model_source": {
+                    "provider_id": "provider-a", "model": "model-a", "identity": "identity-a"
+                },
                 "client_authored": true,
                 "fallback_token_limit_override": 20_000,
                 "inherited_user_message": true,
@@ -234,6 +242,11 @@ fn response_item_envelope_stores_metadata_beside_rollout_payload() -> Result<()>
     assert_eq!(
         envelope.metadata,
         Some(CodexHarnessMetadata {
+            model_source: Some(codex_protocol::protocol::ModelOutputSource {
+                provider_id: "provider-a".into(),
+                model: "model-a".into(),
+                identity: "identity-a".into(),
+            }),
             client_authored: true,
             history_truncation_token_limit: Some(20_000),
             inherited_user_message: true,

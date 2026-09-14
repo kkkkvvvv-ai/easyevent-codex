@@ -49,6 +49,35 @@ const EXEC_FORMAT_MAX_BYTES: usize = 10_000;
 const EXEC_FORMAT_MAX_TOKENS: usize = 2_500;
 const TEST_WAV_SAMPLE_RATE: u32 = 8_000;
 
+#[test]
+fn synthetic_tool_output_preserves_call_source() {
+    let call = ResponseItemEnvelope {
+        item: serde_json::from_value(serde_json::json!({
+            "type": "function_call", "call_id": "call-a", "name": "exec_command",
+            "arguments": "{}"
+        }))
+        .unwrap(),
+        metadata: Some(CodexHarnessMetadata {
+            model_source: Some(codex_protocol::protocol::ModelOutputSource {
+                provider_id: "provider-a".into(),
+                model: "model-a".into(),
+                identity: "identity-a".into(),
+            }),
+            ..Default::default()
+        }),
+    };
+    let mut items = vec![call.clone()];
+    super::normalize::ensure_call_outputs_present(&mut items);
+    let mut expected = ResponseItemEnvelope::new(
+        serde_json::from_value(serde_json::json!({
+            "type": "function_call_output", "call_id": "call-a", "output": "aborted"
+        }))
+        .unwrap(),
+    );
+    expected.metadata = call.metadata.clone();
+    assert_eq!(items, vec![call, expected]);
+}
+
 fn unknown_content_metadata() -> InternalChatMessageMetadataPassthrough {
     InternalChatMessageMetadataPassthrough {
         content_item_kinds: Some(vec![ContentItemKind("unknown".to_string())]),
@@ -357,6 +386,7 @@ fn developer_msg_with_fragments(texts: &[&str]) -> ResponseItem {
 
 fn reference_context_item() -> TurnContextItem {
     TurnContextItem {
+        model_source: None,
         turn_id: Some("reference-turn".to_string()),
         root_turn_id: None,
         disabled_plugin_ids: None,
