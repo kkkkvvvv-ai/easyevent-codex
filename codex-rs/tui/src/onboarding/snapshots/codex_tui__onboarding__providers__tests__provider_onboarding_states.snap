@@ -1,0 +1,38 @@
+---
+source: tui/src/onboarding/providers_tests.rs
+assertion_line: 23
+expression: renders
+---
+Connect a model provider
+
+> Kimi Code
+↑/↓ select · Enter continue · Esc back
+Example: model access was denied
+
+---
+
+Connect a model provider
+
+Kimi Code
+Use a Kimi Code API key.
+https://api.kimi.com/coding/v1
+API key: ••••••••••
+Enter selects a model to validate. Esc cancels without saving.
+Example: model access was denied
+
+---
+
+Connect a model provider
+
+> kimi-for-coding
+  k3
+↑/↓ select · Enter validate and use · Esc cancel
+Validation sends a short test prompt and may incur a small API charge.
+Example: model access was denied
+
+---
+
+Connect a model provider
+
+Validating Responses access and saving the key…
+Example: model access was denied

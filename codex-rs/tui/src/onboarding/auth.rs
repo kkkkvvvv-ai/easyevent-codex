@@ -81,6 +81,8 @@ mod headless_chatgpt_login;
 
 #[derive(Clone)]
 pub(crate) enum SignInState {
+    Provider(super::providers::ProviderOnboardingState),
+    ProviderConfigured,
     PickMode,
     ChatGptContinueInBrowser(ContinueInBrowserState),
     #[allow(dead_code)]
@@ -95,6 +97,7 @@ pub(crate) enum SignInState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SignInOption {
+    Provider,
     ChatGpt,
     DeviceCode,
     ApiKey,
@@ -182,6 +185,9 @@ impl ContinueWithDeviceCodeState {
 
 impl KeyboardHandler for AuthModeWidget {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.handle_provider_key(key_event) {
+            return;
+        }
         if self.handle_bedrock_key_event(&key_event) {
             return;
         }
@@ -213,6 +219,10 @@ impl KeyboardHandler for AuthModeWidget {
             self.select_option_by_index(/*index*/ 3);
             return;
         }
+        if key_event.code == KeyCode::Char('5') && key_event.modifiers.is_empty() {
+            self.select_option_by_index(/*index*/ 4);
+            return;
+        }
         if keys::CONFIRM.is_pressed(key_event) {
             let sign_in_state = { (*self.sign_in_state.read().unwrap()).clone() };
             match sign_in_state {
@@ -235,6 +245,10 @@ impl KeyboardHandler for AuthModeWidget {
     fn handle_paste(&mut self, pasted: String) {
         let sign_in_state = self.sign_in_state.read().unwrap();
         match &*sign_in_state {
+            SignInState::Provider(_) => {
+                drop(sign_in_state);
+                self.handle_provider_paste(&pasted);
+            }
             SignInState::Bedrock(_) => {
                 drop(sign_in_state);
                 let _ = self.handle_bedrock_paste(&pasted);
@@ -325,6 +339,7 @@ impl AuthModeWidget {
     pub(crate) fn should_suppress_printable_quit(&self) -> bool {
         self.sign_in_state.read().is_ok_and(|guard| match &*guard {
             SignInState::ApiKeyEntry(state) => !state.value.is_empty(),
+            SignInState::Provider(_) => true,
             SignInState::Bedrock(state) => state.is_text_entry_active(),
             _ => false,
         })
@@ -358,6 +373,7 @@ impl AuthModeWidget {
             if self.bedrock_setup_enabled {
                 options.push(SignInOption::Bedrock);
             }
+            options.push(SignInOption::Provider);
         }
         options
     }
@@ -373,6 +389,7 @@ impl AuthModeWidget {
             if self.bedrock_setup_enabled {
                 options.push(SignInOption::Bedrock);
             }
+            options.push(SignInOption::Provider);
         }
         options
     }
@@ -401,6 +418,11 @@ impl AuthModeWidget {
 
     fn handle_sign_in_option(&mut self, option: SignInOption) {
         match option {
+            SignInOption::Provider => {
+                if self.is_api_login_allowed() {
+                    self.start_provider_setup();
+                }
+            }
             SignInOption::ChatGpt => {
                 if self.is_chatgpt_login_allowed() {
                     self.start_chatgpt_login();
@@ -490,6 +512,12 @@ impl AuthModeWidget {
 
         for (idx, option) in self.displayed_sign_in_options().into_iter().enumerate() {
             match option {
+                SignInOption::Provider => lines.extend(create_mode_item(
+                    idx,
+                    option,
+                    "Connect another model provider",
+                    "DeepSeek, GLM, Kimi, HY, MiniMax or OpenRouter",
+                )),
                 SignInOption::ChatGpt => {
                     lines.extend(create_mode_item(
                         idx,
@@ -1039,9 +1067,11 @@ impl StepStateProvider for AuthModeWidget {
             | SignInState::ChatGptDeviceCode(_)
             | SignInState::ChatGptSuccessMessage
             | SignInState::Bedrock(_) => StepState::InProgress,
+            SignInState::Provider(_) => StepState::InProgress,
             SignInState::ChatGptSuccess
             | SignInState::ApiKeyConfigured
             | SignInState::BedrockConfigured => StepState::Complete,
+            SignInState::ProviderConfigured => StepState::Complete,
         }
     }
 }
@@ -1052,6 +1082,10 @@ impl WidgetRef for AuthModeWidget {
         match &*sign_in_state {
             SignInState::PickMode => {
                 self.render_pick_mode(area, buf);
+            }
+            SignInState::Provider(state) => state.render(area, buf, self.error_message()),
+            SignInState::ProviderConfigured => {
+                Paragraph::new("✓ Provider configured".green()).render(area, buf)
             }
             SignInState::ChatGptContinueInBrowser(_) => {
                 self.render_continue_in_browser(area, buf);
@@ -1204,6 +1238,7 @@ mod tests {
                 SignInOption::ChatGpt,
                 SignInOption::DeviceCode,
                 SignInOption::ApiKey,
+                SignInOption::Provider,
             ]
         );
 
@@ -1215,6 +1250,7 @@ mod tests {
                 SignInOption::DeviceCode,
                 SignInOption::ApiKey,
                 SignInOption::Bedrock,
+                SignInOption::Provider,
             ]
         );
 
@@ -1247,6 +1283,9 @@ mod tests {
 
           4. Use Amazon Bedrock
              Connect using your AWS credentials
+
+          5. Connect another model provider
+             DeepSeek, GLM, Kimi, HY, MiniMax or OpenRouter
 
           Press enter to continue
         "###);
