@@ -107,6 +107,9 @@ async fn api_key_model_discovery_startup_enablement_respects_user_config(
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                provider_id: None,
+                catalog_mode: None,
+                refresh: None,
                 limit: Some(100),
                 include_hidden: Some(true),
                 cursor: None,
@@ -226,6 +229,9 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                provider_id: None,
+                catalog_mode: None,
+                refresh: None,
                 limit: Some(100),
                 cursor: None,
                 include_hidden: None,
@@ -256,6 +262,9 @@ async fn list_models_includes_hidden_models() -> Result<()> {
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                provider_id: None,
+                catalog_mode: None,
+                refresh: None,
                 limit: Some(100),
                 cursor: None,
                 include_hidden: Some(true),
@@ -373,6 +382,9 @@ api_key_model_discovery = true
         .await?;
     let request_id = mcp
         .send_list_models_request(ModelListParams {
+            provider_id: None,
+            catalog_mode: None,
+            refresh: None,
             limit: Some(100),
             cursor: None,
             include_hidden: None,
@@ -456,6 +468,9 @@ async fn list_models_pagination_works() -> Result<()> {
             .request(|request_id| ClientRequest::ModelList {
                 request_id,
                 params: ModelListParams {
+                    provider_id: None,
+                    catalog_mode: None,
+                    refresh: None,
                     limit: Some(1),
                     cursor: cursor.clone(),
                     include_hidden: None,
@@ -492,6 +507,9 @@ async fn list_models_rejects_invalid_cursor() -> Result<()> {
 
     let request_id = mcp
         .send_list_models_request(ModelListParams {
+            provider_id: None,
+            catalog_mode: None,
+            refresh: None,
             limit: None,
             cursor: Some("invalid".to_string()),
             include_hidden: None,

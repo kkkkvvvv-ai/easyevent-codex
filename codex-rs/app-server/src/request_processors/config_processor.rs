@@ -198,9 +198,18 @@ impl ConfigRequestProcessor {
 
     pub(crate) async fn model_provider_capabilities_read(
         &self,
+        params: codex_app_server_protocol::ModelProviderCapabilitiesReadParams,
     ) -> Result<ModelProviderCapabilitiesReadResponse, JSONRPCErrorError> {
         let config = self.load_latest_config(/*fallback_cwd*/ None).await?;
-        let provider = create_model_provider(config.model_provider, /*auth_manager*/ None);
+        let info = match params.provider_id {
+            Some(id) => config
+                .model_providers
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| invalid_request("Unknown provider"))?,
+            None => config.model_provider,
+        };
+        let provider = create_model_provider(info, /*auth_manager*/ None);
         let capabilities = provider.capabilities();
         Ok(ModelProviderCapabilitiesReadResponse {
             namespace_tools: capabilities.namespace_tools,

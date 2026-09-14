@@ -224,3 +224,59 @@ Existing rollouts may contain historical `ThreadRolledBack` events. Their replay
 and migration remain supported so resuming, reading, and forking those threads
 preserves the surviving history. This disk compatibility does not require restoring
 support for new `thread/rollback` requests.
+
+# Hosted Responses provider setup
+
+The v2 provider setup APIs share their implementation with the CLI `/model`
+picker. They support DeepSeek, GLM (China and Z.AI), Kimi Code, HY (TokenHub
+China and international), MiniMax (China and international), and OpenRouter.
+Endpoints are built in. Credentials belong to the app-server host and are
+isolated by site and endpoint; these APIs never return a saved API key.
+
+1. Call `modelProvider/list` with optional `cursor` and `limit`. Each entry
+   includes `id`, `family`, `name`, `baseUrl`, `keyInstructions`, `configured`,
+   `conflict`, `recommendedModels`, and `supportsModelDiscovery`.
+2. Call `modelProvider/configure` with `{ "providerId": "deepseek", "apiKey":
+   "<key>" }`. An optional `model` selects the validation model; omission uses
+   the recommended default. The server sends a short synthetic Responses SSE
+   request, which may incur a small charge, before saving the key. Validation
+   never includes thread history. The response contains `providerId`, `model`,
+   and `configured`. Validation failure preserves the previous credentials.
+   Unlisted models must also return a synthetic function call; no user tools
+   are exposed or executed during this probe.
+   Updating a key does not silently rebind existing threads to a different
+   credential identity: select the provider again on those threads to refresh
+   their authentication and model catalog together.
+3. Call `model/list` with `providerId` and `catalogMode: "recommended"` or
+   `"all"`. `refresh: false` reads the credential-scoped cached catalog. All
+   mode requires a connected provider; unsupported discovery and failed refresh
+   return errors so clients can retain their existing list. Pagination uses
+   `cursor`, `limit`, `data`, and `nextCursor`.
+4. To use the provider in an existing idle thread, call
+   `thread/settings/update` with `threadId`, `modelProvider`, `model`, and
+   optionally `effort`. The server preserves the thread ID and history, starts
+   a new provider transport session, and emits `thread/settings/updated`.
+   This method retains its existing experimental gate; initialize the client
+   with `capabilities.experimentalApi: true` before using it.
+   Opaque remote compaction is converted to a portable text summary before
+   rebinding the session. Changing providers also summarizes provider-specific
+   tool history using the old provider (an additional model request).
+   Summary failure leaves the provider selection unchanged.
+   Active turns reject provider switching. Existing requests that omit
+   `modelProvider` retain their behavior.
+5. Save future-thread defaults with `config/batchWrite` for `model_provider`,
+   `model`, and `model_reasoning_effort`; respect `okOverridden` responses.
+
+For example, after initialization with experimental APIs enabled. Wait for
+request 1 to succeed before sending request 2:
+
+```json
+{"id":1,"method":"modelProvider/configure","params":{"providerId":"deepseek","apiKey":"<key>"}}
+{"id":2,"method":"thread/settings/update","params":{"threadId":"<existing-thread-id>","modelProvider":"deepseek","model":"deepseek-flash"}}
+```
+
+`modelProvider/capabilities/read` accepts an optional `providerId` without
+changing the active provider. `modelProvider/credential/delete` takes
+`providerId` and returns `{ "deleted": true }` when a stored key was removed.
+Deleting a credential leaves thread history and other provider credentials
+intact; reconnect before making another request with that provider.

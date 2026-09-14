@@ -2714,10 +2714,16 @@ class ModelAvailabilityNux(BaseModel):
     message: str
 
 
+class ModelCatalogMode(Enum):
+    recommended = "recommended"
+    all = "all"
+
+
 class ModelListParams(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
+    catalog_mode: Annotated[ModelCatalogMode | None, Field(alias="catalogMode")] = None
     cursor: Annotated[
         str | None, Field(description="Opaque pagination cursor returned by a previous call.")
     ] = None
@@ -2732,13 +2738,21 @@ class ModelListParams(BaseModel):
         int | None,
         Field(description="Optional page size; defaults to a reasonable server-side value.", ge=0),
     ] = None
+    provider_id: Annotated[
+        str | None,
+        Field(
+            alias="providerId",
+            description="Select a hosted provider without changing the active thread.",
+        ),
+    ] = None
+    refresh: bool | None = None
 
 
 class ModelProviderCapabilitiesReadParams(BaseModel):
-    pass
     model_config = ConfigDict(
         populate_by_name=True,
     )
+    provider_id: Annotated[str | None, Field(alias="providerId")] = None
 
 
 class ModelProviderCapabilitiesReadResponse(BaseModel):
@@ -2748,6 +2762,69 @@ class ModelProviderCapabilitiesReadResponse(BaseModel):
     image_generation: Annotated[bool, Field(alias="imageGeneration")]
     namespace_tools: Annotated[bool, Field(alias="namespaceTools")]
     web_search: Annotated[bool, Field(alias="webSearch")]
+
+
+class ModelProviderConfigureParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    api_key: Annotated[str, Field(alias="apiKey")]
+    model: str | None = None
+    provider_id: Annotated[str, Field(alias="providerId")]
+
+
+class ModelProviderConfigureResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    configured: bool
+    model: str
+    provider_id: Annotated[str, Field(alias="providerId")]
+
+
+class ModelProviderCredentialDeleteParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    provider_id: Annotated[str, Field(alias="providerId")]
+
+
+class ModelProviderCredentialDeleteResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    deleted: bool
+
+
+class ModelProviderInfo(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    base_url: Annotated[str, Field(alias="baseUrl")]
+    configured: bool
+    conflict: bool
+    family: str
+    id: str
+    key_instructions: Annotated[str, Field(alias="keyInstructions")]
+    name: str
+    recommended_models: Annotated[list[str], Field(alias="recommendedModels")]
+    supports_model_discovery: Annotated[bool, Field(alias="supportsModelDiscovery")]
+
+
+class ModelProviderListParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cursor: str | None = None
+    limit: Annotated[int | None, Field(ge=0)] = None
+
+
+class ModelProviderListResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: list[ModelProviderInfo]
+    next_cursor: Annotated[str | None, Field(alias="nextCursor")] = None
 
 
 class ModelRerouteReason(RootModel[Literal["highRiskCyberActivity"]]):
@@ -7176,6 +7253,38 @@ class ModelListRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["model/list"], Field(title="Model/listRequestMethod")]
     params: ModelListParams
+
+
+class ModelProviderListRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[Literal["modelProvider/list"], Field(title="ModelProvider/listRequestMethod")]
+    params: ModelProviderListParams
+
+
+class ModelProviderConfigureRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["modelProvider/configure"], Field(title="ModelProvider/configureRequestMethod")
+    ]
+    params: ModelProviderConfigureParams
+
+
+class ModelProviderCredentialDeleteRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["modelProvider/credential/delete"],
+        Field(title="ModelProvider/credential/deleteRequestMethod"),
+    ]
+    params: ModelProviderCredentialDeleteParams
 
 
 class ModelProviderCapabilitiesReadRequest(BaseModel):
@@ -12180,6 +12289,9 @@ class ClientRequest(
         | TurnInterruptRequest
         | ReviewStartRequest
         | ModelListRequest
+        | ModelProviderListRequest
+        | ModelProviderConfigureRequest
+        | ModelProviderCredentialDeleteRequest
         | ModelProviderCapabilitiesReadRequest
         | ExperimentalFeatureListRequest
         | PermissionProfileListRequest
@@ -12287,6 +12399,9 @@ class ClientRequest(
         | TurnInterruptRequest
         | ReviewStartRequest
         | ModelListRequest
+        | ModelProviderListRequest
+        | ModelProviderConfigureRequest
+        | ModelProviderCredentialDeleteRequest
         | ModelProviderCapabilitiesReadRequest
         | ExperimentalFeatureListRequest
         | PermissionProfileListRequest

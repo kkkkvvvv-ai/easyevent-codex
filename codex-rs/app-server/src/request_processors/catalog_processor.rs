@@ -174,6 +174,9 @@ impl CatalogRequestProcessor {
         &self,
         params: ModelListParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        if params.provider_id.is_some() {
+            return Box::pin(self.hosted_model_list(params)).await;
+        }
         Self::list_models(
             self.thread_manager.clone(),
             self.config.http_client_factory(),
@@ -253,6 +256,7 @@ impl CatalogRequestProcessor {
             limit,
             cursor,
             include_hidden,
+            ..
         } = params;
         let models = supported_models(
             thread_manager,

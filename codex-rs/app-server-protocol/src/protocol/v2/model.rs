@@ -38,7 +38,10 @@ v2_enum_from_core!(
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct ModelProviderCapabilitiesReadParams {}
+pub struct ModelProviderCapabilitiesReadParams {
+    #[ts(optional = nullable)]
+    pub provider_id: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +56,13 @@ pub struct ModelProviderCapabilitiesReadResponse {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ModelListParams {
+    /// Select a hosted provider without changing the active thread.
+    #[ts(optional = nullable)]
+    pub provider_id: Option<String>,
+    #[ts(optional = nullable)]
+    pub catalog_mode: Option<super::ModelCatalogMode>,
+    #[ts(optional = nullable)]
+    pub refresh: Option<bool>,
     /// Opaque pagination cursor returned by a previous call.
     #[ts(optional = nullable)]
     pub cursor: Option<String>,

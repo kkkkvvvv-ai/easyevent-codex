@@ -1820,6 +1820,78 @@
             },
             "method": {
               "enum": [
+                "modelProvider/list"
+              ],
+              "title": "ModelProvider/listRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ModelProviderListParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ModelProvider/listRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "modelProvider/configure"
+              ],
+              "title": "ModelProvider/configureRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ModelProviderConfigureParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ModelProvider/configureRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "modelProvider/credential/delete"
+              ],
+              "title": "ModelProvider/credential/deleteRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ModelProviderCredentialDeleteParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ModelProvider/credential/deleteRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "modelProvider/capabilities/read"
               ],
               "title": "ModelProvider/capabilities/readRequestMethod",
@@ -15228,9 +15300,26 @@
         ],
         "type": "object"
       },
+      "ModelCatalogMode": {
+        "enum": [
+          "recommended",
+          "all"
+        ],
+        "type": "string"
+      },
       "ModelListParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
+          "catalogMode": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ModelCatalogMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "cursor": {
             "description": "Opaque pagination cursor returned by a previous call.",
             "type": [
@@ -15251,6 +15340,19 @@
             "minimum": 0.0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "providerId": {
+            "description": "Select a hosted provider without changing the active thread.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refresh": {
+            "type": [
+              "boolean",
               "null"
             ]
           }
@@ -15283,6 +15385,14 @@
       },
       "ModelProviderCapabilitiesReadParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "providerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "title": "ModelProviderCapabilitiesReadParams",
         "type": "object"
       },
@@ -15305,6 +15415,165 @@
           "webSearch"
         ],
         "title": "ModelProviderCapabilitiesReadResponse",
+        "type": "object"
+      },
+      "ModelProviderConfigureParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "apiKey": {
+            "type": "string"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiKey",
+          "providerId"
+        ],
+        "title": "ModelProviderConfigureParams",
+        "type": "object"
+      },
+      "ModelProviderConfigureResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "model",
+          "providerId"
+        ],
+        "title": "ModelProviderConfigureResponse",
+        "type": "object"
+      },
+      "ModelProviderCredentialDeleteParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerId"
+        ],
+        "title": "ModelProviderCredentialDeleteParams",
+        "type": "object"
+      },
+      "ModelProviderCredentialDeleteResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "ModelProviderCredentialDeleteResponse",
+        "type": "object"
+      },
+      "ModelProviderInfo": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "conflict": {
+            "type": "boolean"
+          },
+          "family": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keyInstructions": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "recommendedModels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "supportsModelDiscovery": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "baseUrl",
+          "configured",
+          "conflict",
+          "family",
+          "id",
+          "keyInstructions",
+          "name",
+          "recommendedModels",
+          "supportsModelDiscovery"
+        ],
+        "type": "object"
+      },
+      "ModelProviderListParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "ModelProviderListParams",
+        "type": "object"
+      },
+      "ModelProviderListResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/definitions/v2/ModelProviderInfo"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ModelProviderListResponse",
         "type": "object"
       },
       "ModelRerouteReason": {

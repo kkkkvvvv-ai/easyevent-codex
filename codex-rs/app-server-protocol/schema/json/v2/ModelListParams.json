@@ -1,6 +1,25 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ModelCatalogMode": {
+      "enum": [
+        "recommended",
+        "all"
+      ],
+      "type": "string"
+    }
+  },
   "properties": {
+    "catalogMode": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ModelCatalogMode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "cursor": {
       "description": "Opaque pagination cursor returned by a previous call.",
       "type": [
@@ -21,6 +40,19 @@
       "minimum": 0.0,
       "type": [
         "integer",
+        "null"
+      ]
+    },
+    "providerId": {
+      "description": "Select a hosted provider without changing the active thread.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "refresh": {
+      "type": [
+        "boolean",
         "null"
       ]
     }

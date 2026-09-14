@@ -1106,6 +1106,21 @@ client_request_definitions! {
         serialization: None,
         response: v2::ModelListResponse,
     },
+    ModelProviderList => "modelProvider/list" {
+        params: v2::ModelProviderListParams,
+        serialization: global_shared_read("model-provider"),
+        response: v2::ModelProviderListResponse,
+    },
+    ModelProviderConfigure => "modelProvider/configure" {
+        params: v2::ModelProviderConfigureParams,
+        serialization: global("model-provider"),
+        response: v2::ModelProviderConfigureResponse,
+    },
+    ModelProviderCredentialDelete => "modelProvider/credential/delete" {
+        params: v2::ModelProviderCredentialDeleteParams,
+        serialization: global("model-provider"),
+        response: v2::ModelProviderCredentialDeleteResponse,
+    },
     ModelProviderCapabilitiesRead => "modelProvider/capabilities/read" {
         params: v2::ModelProviderCapabilitiesReadParams,
         serialization: None,
@@ -3642,6 +3657,9 @@ mod tests {
                 "method": "model/list",
                 "id": 6,
                 "params": {
+                    "providerId": null,
+                    "catalogMode": null,
+                    "refresh": null,
                     "limit": null,
                     "cursor": null,
                     "includeHidden": null
@@ -3656,13 +3674,13 @@ mod tests {
     fn serialize_model_provider_capabilities_read() -> Result<()> {
         let request = ClientRequest::ModelProviderCapabilitiesRead {
             request_id: RequestId::Integer(7),
-            params: v2::ModelProviderCapabilitiesReadParams {},
+            params: v2::ModelProviderCapabilitiesReadParams::default(),
         };
         assert_eq!(
             json!({
                 "method": "modelProvider/capabilities/read",
                 "id": 7,
-                "params": {}
+                "params": { "providerId": null }
             }),
             serde_json::to_value(&request)?,
         );

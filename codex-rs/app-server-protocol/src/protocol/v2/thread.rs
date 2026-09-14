@@ -228,6 +228,9 @@ impl ThreadStartResponse {
 #[ts(export_to = "v2/")]
 pub struct ThreadSettingsUpdateParams {
     pub thread_id: String,
+    /// Switch the provider for subsequent turns. The thread must be idle.
+    #[ts(optional = nullable)]
+    pub model_provider: Option<String>,
     /// Replace this thread's disabled plugin IDs.
     /// Omitted/null preserves the list; [] clears it.
     #[ts(optional = nullable)]

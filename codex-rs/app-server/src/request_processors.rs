@@ -552,6 +552,7 @@ mod marketplace_processor;
 mod mcp_event_stream;
 mod mcp_processor;
 mod memory_status;
+mod model_provider;
 mod persisted_resume_settings;
 mod plugins;
 mod process_exec_processor;

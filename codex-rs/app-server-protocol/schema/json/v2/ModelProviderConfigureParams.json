@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "apiKey": {
+      "type": "string"
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "providerId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "apiKey",
+    "providerId"
+  ],
+  "title": "ModelProviderConfigureParams",
+  "type": "object"
+}

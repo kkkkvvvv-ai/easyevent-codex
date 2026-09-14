@@ -925,11 +925,81 @@ impl TurnRequestProcessor {
     async fn thread_settings_update_inner(
         &self,
         request_id: &ConnectionRequestId,
-        params: ThreadSettingsUpdateParams,
+        mut params: ThreadSettingsUpdateParams,
     ) -> Result<ThreadSettingsUpdateResponse, JSONRPCErrorError> {
         let (_, thread) = self.load_thread(&params.thread_id).await?;
         self.ensure_direct_input_allowed(request_id, thread.as_ref())
             .await?;
+        if let Some(id) = params.model_provider.as_deref() {
+            // Keep setup/validation out of the ordinary settings request's future frame.
+            Box::pin(async {
+                if matches!(
+                    thread.agent_status().await,
+                    codex_protocol::protocol::AgentStatus::Running
+                ) {
+                    return Err(invalid_request(
+                        "Wait for the current turn to finish before switching providers",
+                    ));
+                }
+                let config = self
+                    .config_manager
+                    .load_latest_config(None)
+                    .await
+                    .map_err(|_| internal_error("Unable to load provider configuration"))?;
+                let mut candidate = thread.config().await.as_ref().clone();
+                candidate.model_provider = config
+                    .model_providers
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| invalid_request("Unknown provider"))?;
+                candidate.model_provider_id = id.to_string();
+                self.config_manager
+                    .check_thread_model_provider(&candidate)
+                    .await
+                    .map_err(|error| invalid_request(error.to_string()))?;
+                if let Some(preset) = codex_model_provider_info::responses_provider_preset(id) {
+                    super::model_provider::configured_preset(&config, id)?;
+                    let store = super::model_provider::provider_store(&config);
+                    let key = store
+                        .read(preset)
+                        .map_err(|_| internal_error("Unable to read provider credentials"))?
+                        .ok_or_else(|| invalid_request("Connect this provider first"))?;
+                    let model = params
+                        .model
+                        .get_or_insert_with(|| preset.models[0].to_string());
+                    let catalog =
+                        codex_model_provider::cached_responses_models(&store, preset, &key);
+                    let info = catalog
+                        .models
+                        .into_iter()
+                        .find(|info| info.slug == *model)
+                        .unwrap_or_else(|| codex_models_manager::hosted_responses_model(model));
+                    if params.effort.as_ref().is_some_and(|effort| {
+                        !info
+                            .supported_reasoning_levels
+                            .iter()
+                            .any(|supported| &supported.effort == effort)
+                    }) {
+                        return Err(invalid_request(
+                            "This model does not advertise the requested reasoning effort",
+                        ));
+                    }
+                    codex_model_provider::validate_responses_key(
+                        config.http_client_factory(),
+                        preset,
+                        &key,
+                        model,
+                    )
+                    .await
+                    .map_err(invalid_request)?;
+                    // Existing OpenAI collaboration settings must not override the chosen model.
+                    params.collaboration_mode = None;
+                    params.service_tier = Some(None);
+                }
+                Ok::<(), JSONRPCErrorError>(())
+            })
+            .await?;
+        }
         let cwd = resolve_request_cwd(params.cwd)?;
         let environment_override = self
             .build_environment_override(
@@ -960,7 +1030,12 @@ impl TurnRequestProcessor {
             )
             .await?;
 
-        if thread_settings != codex_protocol::protocol::ThreadSettingsOverrides::default() {
+        if let Some(id) = params.model_provider {
+            thread
+                .switch_model_provider(id, thread_settings)
+                .await
+                .map_err(|error| invalid_request(error.to_string()))?;
+        } else if thread_settings != codex_protocol::protocol::ThreadSettingsOverrides::default() {
             self.submit_core_op(
                 request_id,
                 thread.as_ref(),
