@@ -236,6 +236,7 @@ mod mcp_runtime;
 pub(crate) mod model_runtime;
 pub(crate) mod multi_agents;
 mod plugin_selection;
+mod provider_restore;
 mod realtime_history;
 mod retained_context;
 mod review;
@@ -1631,6 +1632,8 @@ impl Session {
         } = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
+        self.restore_model_runtime(&history, reference_context_item.as_ref(), rollout_items)
+            .await;
         // Keep the recorded rollout unchanged. Prepare its reconstructed history before
         // installing it, so legacy media is processed once for this resume or fork and
         // will be processed again if the rollout is reconstructed in a future session.
@@ -1854,11 +1857,18 @@ impl Session {
             }
             let new_config = notify_config_contributors
                 .then(|| self.build_effective_session_config(&state.session_configuration));
+            let mut snapshot = state
+                .session_configuration
+                .thread_settings_snapshot(&self.services.turn_environments.selections());
+            snapshot.active_model = state.active_model_source.as_ref().map(|source| {
+                codex_protocol::protocol::ProviderModelSelection {
+                    model_provider: source.provider_id.clone(),
+                    model: source.model.clone(),
+                }
+            });
             let commit = SessionSettingsCommit {
                 configuration: state.session_configuration.clone(),
-                snapshot: state
-                    .session_configuration
-                    .thread_settings_snapshot(&self.services.turn_environments.selections()),
+                snapshot,
             };
             (
                 commit,
@@ -1895,16 +1905,30 @@ impl Session {
 
     pub(crate) async fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
         let state = self.state.lock().await;
-        state
+        let mut snapshot = state
             .session_configuration
-            .thread_config_snapshot(self.services.turn_environments.selections())
+            .thread_config_snapshot(self.services.turn_environments.selections());
+        snapshot.active_model = state.active_model_source.as_ref().map(|source| {
+            codex_protocol::protocol::ProviderModelSelection {
+                model_provider: source.provider_id.clone(),
+                model: source.model.clone(),
+            }
+        });
+        snapshot
     }
 
     pub(crate) async fn thread_settings_snapshot(&self) -> ThreadSettingsSnapshot {
         let state = self.state.lock().await;
-        state
+        let mut snapshot = state
             .session_configuration
-            .thread_settings_snapshot(&self.services.turn_environments.selections())
+            .thread_settings_snapshot(&self.services.turn_environments.selections());
+        snapshot.active_model = state.active_model_source.as_ref().map(|source| {
+            codex_protocol::protocol::ProviderModelSelection {
+                model_provider: source.provider_id.clone(),
+                model: source.model.clone(),
+            }
+        });
+        snapshot
     }
 
     pub(crate) async fn restorable_thread_settings(&self) -> CodexThreadSettingsOverrides {

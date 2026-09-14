@@ -83,6 +83,7 @@ struct ThreadListFilters {
 // Persisted inputs that can change while loading configuration without the metadata permit.
 #[derive(PartialEq)]
 struct ResumeConfigState {
+    persisted_model_selection: Option<codex_core::PersistedModelSelection>,
     history_cwd: Option<PathBuf>,
     workspace_roots: Option<Vec<AbsolutePathBuf>>,
     persisted_metadata: Option<ThreadMetadata>,
@@ -3638,6 +3639,13 @@ impl ThreadRequestProcessor {
             exclude_turns,
             initial_turns_page,
         } = params.clone();
+        let persist_model_selection = model.is_some()
+            || model_provider.is_some()
+            || request_overrides.as_ref().is_some_and(|values| {
+                ["model", "model_provider", "model_reasoning_effort"]
+                    .iter()
+                    .any(|key| values.contains_key(*key))
+            });
         let include_turns = !exclude_turns;
 
         let resume_result = if let Some(history) = history {
@@ -3838,6 +3846,15 @@ impl ThreadRequestProcessor {
         }
         let has_explicit_model_resume_override =
             has_model_resume_override(request_overrides.as_ref(), &typesafe_overrides);
+        let explicit_effort = request_overrides
+            .as_ref()
+            .is_some_and(|values| values.contains_key("model_reasoning_effort"));
+        let persisted_model_selection = match &thread_history {
+            InitialHistory::Resumed(history) => {
+                codex_core::latest_persisted_model_selection(&history.history)
+            }
+            _ => None,
+        };
         let persisted_metadata = self
             .load_and_apply_persisted_resume_metadata(
                 &thread_history,
@@ -3846,11 +3863,18 @@ impl ThreadRequestProcessor {
             )
             .await;
 
-        let clear_reasoning_effort = !has_explicit_model_resume_override
-            && persisted_metadata
-                .as_ref()
-                .is_some_and(|metadata| metadata.reasoning_effort.is_none());
+        let clear_reasoning_effort = !explicit_effort
+            && persisted_model_selection.as_ref().map_or_else(
+                || {
+                    !has_explicit_model_resume_override
+                        && persisted_metadata
+                            .as_ref()
+                            .is_some_and(|metadata| metadata.reasoning_effort.is_none())
+                },
+                |selection| selection.reasoning_effort.is_none(),
+            );
         let config_state = ResumeConfigState {
+            persisted_model_selection,
             history_cwd: history_cwd.clone(),
             workspace_roots: typesafe_overrides.workspace_roots.clone(),
             persisted_metadata,
@@ -3907,6 +3931,16 @@ impl ThreadRequestProcessor {
                 session_configured,
                 ..
             }) => {
+                if persist_model_selection {
+                    codex_thread
+                        .checkpoint_thread_settings()
+                        .await
+                        .map_err(|error| {
+                            internal_error(format!(
+                                "failed to persist resumed model selection: {error}"
+                            ))
+                        })?;
+                }
                 let ThreadResumeTarget::Client(request_id) = target else {
                     // Observe lifecycle events without attaching a client subscription.
                     self.thread_watch_manager
@@ -4162,11 +4196,12 @@ impl ThreadRequestProcessor {
             {
                 typesafe_overrides.model_provider = Some(selection.model_provider);
             }
-            if !explicit.is_some_and(|values| values.contains_key("model_reasoning_effort")) {
-                request_overrides.get_or_insert_default().insert(
-                    "model_reasoning_effort".into(),
-                    serde_json::json!(selection.reasoning_effort),
-                );
+            if !explicit.is_some_and(|values| values.contains_key("model_reasoning_effort"))
+                && let Some(effort) = selection.reasoning_effort
+            {
+                request_overrides
+                    .get_or_insert_default()
+                    .insert("model_reasoning_effort".into(), serde_json::json!(effort));
             }
         }
         if let Some(persisted_settings) = latest_persisted_resume_settings(&resumed_history.history)
