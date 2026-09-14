@@ -181,14 +181,39 @@ pub(crate) async fn run_turn(
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
     // when they would push the thread over the compaction threshold.
-    if let Err(err) = run_pre_sampling_compact(
-        &sess,
-        &turn_context,
-        &mut client_session,
-        &cancellation_token,
-    )
-    .await
+    let source = match turn_context
+        .model_runtime
+        .source_for(&turn_context.model_info().slug)
     {
+        Ok(source) => source,
+        Err(error) => {
+            run_hooks_and_record_inputs(
+                &sess,
+                &turn_context,
+                &turn_context.capture_current_model_info(),
+                &input,
+                PersistContext::Standard,
+            )
+            .await;
+            return Err(error);
+        }
+    };
+    let active_source = sess.state.lock().await.active_model_source.clone();
+    let changing_model = active_source.as_ref() != Some(&source);
+    let changing_runtime = active_source.as_ref().is_some_and(|active| {
+        active.provider_id != source.provider_id || active.identity != source.identity
+    });
+    if let Err(err) = if changing_runtime {
+        Ok(())
+    } else {
+        run_pre_sampling_compact(
+            &sess,
+            &turn_context,
+            &mut client_session,
+            &cancellation_token,
+        )
+        .await
+    } {
         // Compaction runs before the new input is recorded, so preserve it on every failure.
         run_hooks_and_record_inputs(
             &sess,
@@ -387,12 +412,14 @@ pub(crate) async fn run_turn(
 
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
         .await;
-    sess.set_previous_turn_settings(Some(PreviousTurnSettings {
-        model: turn_context.model_info().slug.clone(),
-        comp_hash: turn_context.model_info().comp_hash.clone(),
-        realtime_active: Some(turn_context.realtime_active),
-    }))
-    .await;
+    if !changing_model {
+        sess.set_previous_turn_settings(Some(PreviousTurnSettings {
+            model: turn_context.model_info().slug.clone(),
+            comp_hash: turn_context.model_info().comp_hash.clone(),
+            realtime_active: Some(turn_context.realtime_active),
+        }))
+        .await;
+    }
     for response_item in injection_items {
         sess.record_conversation_items(
             &turn_context,
@@ -507,6 +534,32 @@ pub(crate) async fn run_turn(
             // Keep the override after accepted input so history truncation removes them together.
             sess.record_reasoning_effort_override(step_context.as_ref())
                 .await;
+
+            let source = turn_context
+                .model_runtime
+                .source_for(&step_context.settings.model_info.slug)?;
+            if sess.state.lock().await.active_model_source.as_ref() != Some(&source) {
+                sess.prepare_provider_handoff(step_context.as_ref(), &cancellation_token)
+                    .await?;
+                world_state = sess
+                    .record_context_updates_and_set_reference_context_item(step_context.as_ref())
+                    .await?;
+                if cancellation_token.is_cancelled() {
+                    return Err(CodexErr::TurnAborted);
+                }
+                sess.activate_model_runtime(step_context.as_ref(), &cancellation_token)
+                    .await?;
+                sess.set_previous_turn_settings(Some(PreviousTurnSettings {
+                    model: step_context.settings.model_info.slug.clone(),
+                    comp_hash: step_context.settings.model_info.comp_hash.clone(),
+                    realtime_active: Some(turn_context.realtime_active),
+                }))
+                .await;
+            } else {
+                let mut state = sess.state.lock().await;
+                state.active_model_runtime = Some(turn_context.model_runtime.clone());
+                state.active_model_settings = Some(step_context.settings.clone());
+            }
 
             // Construct the input that we will send to the model.
             let sampling_request_input: Vec<ResponseItem> = async {
@@ -1551,7 +1604,7 @@ async fn run_sampling_request(
     cancellation_token: CancellationToken,
 ) -> CodexResult<(SamplingRequestResult, Vec<ResponseItem>)> {
     let turn_context = Arc::clone(&step_context.turn);
-    let base_instructions = sess.get_prompt_base_instructions().await;
+    let base_instructions = sess.provider_base_instructions(step_context.as_ref()).await;
 
     let tool_runtime = ToolCallRuntime::new(
         Arc::clone(&sess),

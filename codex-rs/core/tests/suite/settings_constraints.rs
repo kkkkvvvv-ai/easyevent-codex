@@ -154,7 +154,7 @@ async fn protected_model_settings_use_the_proposed_permissions(
     assert_eq!(test.codex.thread_settings_snapshot().await, initial);
     assert!(response.requests().is_empty());
 
-    let expected = ThreadSettingsSnapshot {
+    let mut expected = ThreadSettingsSnapshot {
         active_model: None,
         model: PROTECTED_MODEL.to_string(),
         collaboration_mode: initial.collaboration_mode.with_updates(
@@ -177,13 +177,17 @@ async fn protected_model_settings_use_the_proposed_permissions(
         )
         .await?;
     assert_eq!(applied, expected);
-    assert_eq!(test.codex.thread_settings_snapshot().await, expected);
     if let SettingsOperation::TurnStart = operation {
         wait_for_event(&test.codex, |event| {
             matches!(event, EventMsg::TurnComplete(_))
         })
         .await;
+        expected.active_model = Some(codex_protocol::protocol::ProviderModelSelection {
+            model_provider: expected.model_provider_id.clone(),
+            model: PROTECTED_MODEL.to_owned(),
+        });
     }
+    assert_eq!(test.codex.thread_settings_snapshot().await, expected);
 
     // Even an update with no step-settings edits must revalidate the existing
     // protected model against the proposed permissions.

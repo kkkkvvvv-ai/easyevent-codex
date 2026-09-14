@@ -239,7 +239,7 @@ async fn settings_notifications_keep_their_commit_across_postcommit_work(
     // Submitted operations are serialized. Runtime restoration is an existing
     // direct writer, so it can overlap the first operation's post-commit work.
     timeout(TIMEOUT, test.codex.restore_thread_settings(initial)).await??;
-    let restored = test.codex.thread_settings_snapshot().await;
+    let mut restored = test.codex.thread_settings_snapshot().await;
     assert_eq!(restored.model, INITIAL_MODEL);
     assert_eq!(restored.disabled_plugin_ids, vec!["slack@openai"]);
     release_tx.send(())?;
@@ -283,6 +283,10 @@ async fn settings_notifications_keep_their_commit_across_postcommit_work(
         response.single_request().body_json()["model"],
         expected_request_model
     );
+    restored.active_model = Some(codex_protocol::protocol::ProviderModelSelection {
+        model_provider: restored.model_provider_id.clone(),
+        model: expected_request_model.to_owned(),
+    });
     assert_eq!(test.codex.thread_settings_snapshot().await, restored);
     Ok(())
 }

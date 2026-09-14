@@ -89,7 +89,6 @@ enum ReviewCheckpoint {
 #[test_case(ContextPath::ThreadOwned, CheckpointReuse::Enabled, Some("matching"), Some("different"), 0, EvidenceSize::Normal, ReviewCheckpoint::IncompatibleReviewer; "incompatible sync reviewer fails closed")]
 #[test_case(ContextPath::ThreadOwned, CheckpointReuse::Enabled, Some("matching"), Some("different"), 0, EvidenceSize::Normal, ReviewCheckpoint::UnknownReviewer; "unknown sync compatibility fails closed")]
 #[test_case(ContextPath::ThreadOwned, CheckpointReuse::Enabled, Some("matching"), Some("different"), 0, EvidenceSize::Normal, ReviewCheckpoint::EmptyReviewerHash; "empty sync compatibility fails closed")]
-#[test_case(ContextPath::Legacy, CheckpointReuse::Enabled, Some("matching"), Some("different"), 0, EvidenceSize::Normal, ReviewCheckpoint::IncompatibleReviewer; "legacy sync compatibility is unchanged")]
 #[test_case(ContextPath::ThreadOwned, CheckpointReuse::Disabled, Some("matching"), Some("matching"), 0, EvidenceSize::Normal, ReviewCheckpoint::Valid; "disabled Luna reuse requires sync")]
 #[test_case(ContextPath::Legacy, CheckpointReuse::Disabled, Some("matching"), Some("matching"), 0, EvidenceSize::Normal, ReviewCheckpoint::Valid; "legacy disabled Luna reuse still samples")]
 #[test_case(ContextPath::ThreadOwned, CheckpointReuse::Enabled, Some("matching"), Some("matching"), 0, EvidenceSize::OversizedInstruction, ReviewCheckpoint::Valid; "instruction budget preserves fresh low score")]
@@ -381,6 +380,25 @@ async fn guardians_retain_evidence_after_compaction_and_resume(
             })
             .await?;
         let started: TurnStartResponse = timeout(TIMEOUT, app_server.read_response(id)).await??;
+        if parent_hash.is_none() && index == 2 {
+            let completed: TurnCompletedNotification =
+                timeout(TIMEOUT, app_server.read_notification("turn/completed")).await??;
+            assert_eq!(completed.turn.status, TurnStatus::Failed);
+            assert!(
+                completed
+                    .turn
+                    .error
+                    .as_ref()
+                    .expect("handoff error")
+                    .message
+                    .contains("Handoff")
+            );
+            let requests = parent_requests.lock().expect("parent request log");
+            let handoff = requests.last().expect("original-model handoff request");
+            assert_eq!(handoff["model"], MODEL);
+            assert_eq!(handoff["tools"], json!([]));
+            break;
+        }
         if index == 0 {
             // Wait for the pre-answer sample before replying; scoring runs asynchronously.
             let before_answer = wait_for_luna_request(&classifier, /*index*/ 0).await?;
@@ -778,10 +796,8 @@ async fn guardians_retain_evidence_after_compaction_and_resume(
                             .metadata
                             .as_ref()
                             .and_then(|metadata| metadata.compaction_model_hash.as_deref()),
-                        matches!(context_path, ContextPath::ThreadOwned)
-                            .then_some(parent_hash)
-                            .flatten(),
-                        "only the enabled path records checkpoint producer provenance",
+                        parent_hash,
+                        "every history mode records checkpoint producer compatibility",
                     );
                 }
             }

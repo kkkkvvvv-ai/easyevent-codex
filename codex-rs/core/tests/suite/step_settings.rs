@@ -755,8 +755,8 @@ async fn settings_updates_preserve_turn_identity_and_target(target: SettingsTarg
     )
     .await;
     let test = step_settings_test().build_with_auto_env(&server).await?;
-    let original_settings = test.codex.thread_settings_snapshot().await;
     let request = start_paused_turn(&test.codex).await?;
+    let original_settings = test.codex.thread_settings_snapshot().await;
 
     match target {
         SettingsTarget::Thread => {
@@ -825,8 +825,13 @@ async fn settings_updates_preserve_turn_identity_and_target(target: SettingsTarg
     );
     let expected_future_settings = match target {
         SettingsTarget::Turn => {
-            assert_eq!(settings_events, Vec::new());
-            original_settings
+            let mut active_settings = original_settings;
+            active_settings.active_model = Some(codex_protocol::protocol::ProviderModelSelection {
+                model_provider: active_settings.model_provider_id.clone(),
+                model: MODEL_B.to_owned(),
+            });
+            assert_eq!(settings_events, vec![active_settings.clone()]);
+            active_settings
         }
         SettingsTarget::Thread => {
             assert_eq!(settings_events, vec![changed_settings.clone()]);

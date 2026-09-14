@@ -245,14 +245,25 @@ async fn provider_switch_preserves_thread_and_routes_history_with_new_credential
     Ok(())
 }
 
+#[test_case("window"; "readable_history_exceeds_target_budget")]
+#[test_case("complete"; "complete")]
+#[test_case("chinese"; "chinese_long_summary")]
+#[test_case("oversize"; "oversize_summary")]
+#[test_case("empty"; "empty_summary")]
+#[test_case("truncated"; "truncated_summary")]
+#[test_case("tool"; "unexpected_tool")]
 #[tokio::test]
-async fn provider_switch_materializes_encrypted_compaction_before_changing_endpoint() -> Result<()>
-{
+async fn provider_switch_prepares_handoff_before_changing_endpoint(outcome: &str) -> Result<()> {
     let first = responses::start_mock_server().await;
     let second = responses::start_mock_server().await;
     let second_url = format!("{}/v1", second.uri());
+    let window_pressure = outcome == "window";
     let test = test_codex()
         .with_config(move |config| {
+            if window_pressure {
+                config.model_context_window = Some(8_000);
+                config.base_instructions = Some("Follow the user's instructions.".into());
+            }
             config.model_providers.insert(
                 "provider-b".into(),
                 ModelProviderInfo {
@@ -263,25 +274,40 @@ async fn provider_switch_materializes_encrypted_compaction_before_changing_endpo
         })
         .build_with_auto_env(&first)
         .await?;
-    test.codex
-        .inject_response_items(vec![codex_protocol::models::ResponseItem::Compaction {
-            id: None,
-            encrypted_content: "endpoint-owned-context".into(),
-            internal_chat_message_metadata_passthrough: None,
-        }])
-        .await?;
-    let summary = responses::mount_sse_once(
-        &first,
-        responses::sse(vec![
-            responses::ev_response_created("summary"),
-            responses::ev_assistant_message(
-                "portable",
-                "The user wants to keep the blue notebook.",
-            ),
-            responses::ev_completed("summary"),
-        ]),
-    )
-    .await;
+    responses::mount_sse_once(&first, responses::sse(vec![
+        responses::ev_assistant_message("initial", "Remember the blue notebook"),
+        if window_pressure {
+            responses::ev_assistant_message("long-plan", &format!("endpoint-owned-context:{}", "x".repeat(24_000)))
+        } else {
+            serde_json::json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":"endpoint-owned-context"}})
+        },
+        responses::ev_completed("initial"),
+    ])).await;
+    test.submit_text_turn("Remember the blue notebook").await?;
+    let summary_text = match outcome {
+        "chinese" => format!(
+            "{}The user wants to keep the blue notebook.",
+            "保留已确认计划、审查结论与尚未执行的修改。".repeat(30)
+        ),
+        "oversize" => "x".repeat(16385),
+        "empty" => String::new(),
+        _ => "The user wants to keep the blue notebook.".into(),
+    };
+    let mut events = vec![responses::ev_response_created("summary")];
+    if outcome == "tool" {
+        events.push(responses::ev_function_call(
+            "forbidden-tool",
+            "exec_command",
+            r#"{"cmd":"echo wrong"}"#,
+        ));
+    } else {
+        events.push(responses::ev_assistant_message("portable", &summary_text));
+    }
+    if outcome != "truncated" {
+        events.push(responses::ev_completed("summary"));
+    }
+    let summary = responses::mount_sse_once(&first, responses::sse(events)).await;
+    let active_before = test.codex.thread_settings_snapshot().await.active_model;
     tokio::time::timeout(
         std::time::Duration::from_secs(/*secs*/ 20),
         test.codex.switch_model_provider(
@@ -293,6 +319,41 @@ async fn provider_switch_materializes_encrypted_compaction_before_changing_endpo
         ),
     )
     .await??;
+    assert!(summary.requests().is_empty());
+    let next = responses::mount_sse_once(&second, responses::sse_completed("next")).await;
+    if !matches!(outcome, "complete" | "chinese" | "window") {
+        test.codex
+            .start_turn_if_idle(codex_core::TurnInputRequest::user_input(vec![
+                codex_protocol::user_input::UserInput::Text {
+                    text: "Continue".into(),
+                    text_elements: Vec::new(),
+                },
+            ]))
+            .await?;
+        core_test_support::wait_for_event(&test.codex, |event| {
+            matches!(event, codex_protocol::protocol::EventMsg::Error(_))
+        })
+        .await;
+        core_test_support::wait_for_event(&test.codex, |event| {
+            matches!(event, codex_protocol::protocol::EventMsg::TurnComplete(_))
+        })
+        .await;
+        assert!(next.requests().is_empty());
+        assert_eq!(
+            test.codex.thread_settings_snapshot().await.active_model,
+            active_before
+        );
+        assert_eq!(
+            test.codex
+                .thread_settings_snapshot()
+                .await
+                .model_provider_id,
+            "provider-b"
+        );
+        test.codex.shutdown_and_wait().await?;
+        return Ok(());
+    }
+    test.submit_text_turn("Continue").await?;
     assert!(
         summary
             .single_request()
@@ -300,26 +361,55 @@ async fn provider_switch_materializes_encrypted_compaction_before_changing_endpo
             .to_string()
             .contains("endpoint-owned-context")
     );
-    let next = responses::mount_sse_once(&second, responses::sse_completed("next")).await;
-    test.submit_text_turn("Continue").await?;
     let body = next.single_request().body_json().to_string();
     assert!(body.contains("blue notebook"));
+    if outcome == "chinese" {
+        assert!(body.contains(&summary_text));
+    }
     assert!(!body.contains("endpoint-owned-context"));
     test.codex.shutdown_and_wait().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn provider_switch_rejects_running_turn_without_mutating_settings() -> Result<()> {
+async fn provider_switch_saves_next_turn_selection_while_current_turn_keeps_its_runtime()
+-> Result<()> {
     use core_test_support::streaming_sse::StreamingSseChunk;
     use core_test_support::streaming_sse::start_streaming_sse_server;
+    let target = responses::start_mock_server().await;
+    let target_url = format!("{}/v1", target.uri());
     let (release, gate) = tokio::sync::oneshot::channel();
-    let (server, _) = start_streaming_sse_server(vec![vec![StreamingSseChunk {
-        gate: Some(gate),
-        body: responses::sse_completed("busy-turn"),
-    }]])
+    let (server, _) = start_streaming_sse_server(vec![
+        vec![StreamingSseChunk {
+            gate: Some(gate),
+            body: responses::sse(vec![
+                responses::ev_function_call(
+                    "busy-plan",
+                    "update_plan",
+                    r#"{"plan":[{"step":"Keep the original runtime","status":"completed"}]}"#,
+                ),
+                responses::ev_completed("busy-tool"),
+            ]),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: responses::sse_completed("busy-turn"),
+        }],
+    ])
     .await;
-    let test = test_codex().build_with_streaming_server(&server).await?;
+    let test = test_codex()
+        .with_config(move |config| {
+            config.update_plan_enabled = true;
+            config.model_providers.insert(
+                "next-provider".into(),
+                ModelProviderInfo {
+                    base_url: Some(target_url),
+                    ..Default::default()
+                },
+            );
+        })
+        .build_with_streaming_server(&server)
+        .await?;
     let initial = test.codex.thread_settings_snapshot().await;
     test.codex
         .start_turn_if_idle(codex_core::TurnInputRequest::user_input(vec![
@@ -329,24 +419,44 @@ async fn provider_switch_rejects_running_turn_without_mutating_settings() -> Res
             },
         ]))
         .await?;
-    let result = test
-        .codex
+    server.wait_for_request_count(1).await;
+    test.codex
         .switch_model_provider(
-            "deepseek".into(),
+            "next-provider".into(),
             ThreadSettingsOverrides {
-                model: Some("deepseek-flash".into()),
+                model: Some("gpt-5.5".into()),
                 ..Default::default()
             },
         )
-        .await;
-    assert!(result.is_err());
-    assert_eq!(test.codex.thread_settings_snapshot().await, initial);
+        .await?;
+    let pending = test.codex.thread_settings_snapshot().await;
+    assert_eq!(
+        (pending.model_provider_id.as_str(), pending.model.as_str()),
+        ("next-provider", "gpt-5.5")
+    );
+    let next = responses::mount_sse_once(&target, responses::sse_completed("next-user-turn")).await;
     let _ = release.send(());
     core_test_support::wait_for_event(&test.codex, |event| {
         matches!(event, codex_protocol::protocol::EventMsg::TurnComplete(_))
     })
     .await;
+    server.wait_for_request_count(2).await;
+    assert!(next.requests().is_empty());
+    assert_eq!(
+        test.codex.thread_settings_snapshot().await.active_model,
+        Some(codex_protocol::protocol::ProviderModelSelection {
+            model_provider: initial.model_provider_id,
+            model: initial.model,
+        })
+    );
+    test.submit_text_turn("Continue with the next provider")
+        .await?;
+    assert_eq!(
+        next.single_request().function_call_output_text("busy-plan"),
+        Some("Plan updated".into())
+    );
     test.codex.shutdown_and_wait().await?;
+    server.shutdown().await;
     Ok(())
 }
 
@@ -386,6 +496,136 @@ async fn provider_reselection_does_not_require_old_credentials_to_summarize_port
             .body_json()
             .to_string()
             .contains("No files changed")
+    );
+    test.codex.shutdown_and_wait().await?;
+    Ok(())
+}
+
+#[test_case(false; "readable_history")]
+#[test_case(true; "opaque_history")]
+#[tokio::test]
+async fn resumed_provider_switch_handles_missing_original_credentials(opaque: bool) -> Result<()> {
+    let first = responses::start_mock_server().await;
+    let target = responses::start_mock_server().await;
+    let target_url = format!("{}/v1", target.uri());
+    let mut test = test_codex()
+        .with_config(move |config| {
+            config.model_provider_id = "original".into();
+            config.model_provider.requires_openai_auth = false;
+            config.model_provider.experimental_bearer_token = Some("original-key".into());
+            config
+                .model_providers
+                .insert("original".into(), config.model_provider.clone());
+            config.model_providers.insert(
+                "next".into(),
+                ModelProviderInfo {
+                    base_url: Some(target_url),
+                    ..Default::default()
+                },
+            );
+        })
+        .build_with_auto_env(&first)
+        .await?;
+    let mut events = vec![responses::ev_assistant_message(
+        "plan",
+        "The remaining review fix is a bounds check.",
+    )];
+    if opaque {
+        events.push(serde_json::json!({"type":"response.output_item.done", "item":{"type":"compaction","encrypted_content":"old-only-checkpoint"}}));
+    }
+    events.push(responses::ev_completed("first"));
+    responses::mount_sse_once(&first, responses::sse(events)).await;
+    test.submit_text_turn("Review the bounds check").await?;
+    let active = test.codex.thread_settings_snapshot().await.active_model;
+    test.codex
+        .switch_model_provider(
+            "next".into(),
+            ThreadSettingsOverrides {
+                model: Some("gpt-5.5".into()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    let mut config = test.codex.config().await.as_ref().clone();
+    let original = config
+        .model_providers
+        .get_mut("original")
+        .context("original provider")?;
+    original.experimental_bearer_token = None;
+    original.env_key = Some(format!(
+        "CODEX_MISSING_HANDOFF_KEY_{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    let thread_id = test.session_configured.thread_id;
+    test.codex.flush_rollout().await?;
+    let saved = test
+        .thread_store
+        .load_latest_model_context(codex_thread_store::LoadThreadHistoryParams {
+            thread_id,
+            include_archived: true,
+        })
+        .await?;
+    test.codex.shutdown_and_wait().await?;
+    let resumed = test
+        .thread_manager
+        .resume_thread_with_history(
+            config,
+            codex_history::InitialHistory::Resumed(codex_history::ResumedHistory {
+                conversation_id: thread_id,
+                history: std::sync::Arc::new(saved.items),
+                rollout_path: test.session_configured.rollout_path.clone(),
+            }),
+            test.thread_manager.auth_manager(),
+            /*parent_trace*/ None,
+            Default::default(),
+        )
+        .await?;
+    test.codex = resumed.thread;
+    assert_eq!(
+        test.codex.thread_settings_snapshot().await.active_model,
+        active
+    );
+    let next = responses::mount_sse_once(&target, responses::sse_completed("next")).await;
+    if opaque {
+        test.codex
+            .start_turn_if_idle(codex_core::TurnInputRequest::user_input(vec![
+                codex_protocol::user_input::UserInput::Text {
+                    text: "Apply the fix".into(),
+                    text_elements: Vec::new(),
+                },
+            ]))
+            .await?;
+        let event = core_test_support::wait_for_event(&test.codex, |event| {
+            matches!(event, codex_protocol::protocol::EventMsg::Error(_))
+        })
+        .await;
+        assert!(
+            matches!(event, codex_protocol::protocol::EventMsg::Error(error) if error.message.contains("original provider is unavailable"))
+        );
+        core_test_support::wait_for_event(&test.codex, |event| {
+            matches!(event, codex_protocol::protocol::EventMsg::TurnComplete(_))
+        })
+        .await;
+        assert!(next.requests().is_empty());
+        assert_eq!(
+            test.codex.thread_settings_snapshot().await.active_model,
+            active
+        );
+    } else {
+        test.submit_text_turn("Apply the fix").await?;
+        assert!(
+            next.single_request()
+                .body_json()
+                .to_string()
+                .contains("bounds check")
+        );
+    }
+    assert_eq!(
+        test.codex
+            .thread_settings_snapshot()
+            .await
+            .model_provider_id,
+        "next"
     );
     test.codex.shutdown_and_wait().await?;
     Ok(())

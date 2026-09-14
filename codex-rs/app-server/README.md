@@ -252,18 +252,22 @@ isolated by site and endpoint; these APIs never return a saved API key.
    mode requires a connected provider; unsupported discovery and failed refresh
    return errors so clients can retain their existing list. Pagination uses
    `cursor`, `limit`, `data`, and `nextCursor`.
-4. To use the provider in an existing idle thread, call
+4. To select the provider for the next user turn, call
    `thread/settings/update` with `threadId`, `modelProvider`, `model`, and
-   optionally `effort`. The server preserves the thread ID and history, starts
-   a new provider transport session, and emits `thread/settings/updated`.
+   optionally `effort`. A running turn retains its captured provider and tool loop.
+   The server preserves the thread ID and history and acknowledges the saved selection.
+   `activeModel` in the response and settings notifications is the last successfully
+   activated `{ modelProvider, model }`, or `null` before activation. Existing model
+   fields describe next-turn defaults. Wait for the matching settings notification
+   before releasing input queued behind a selection.
    This method retains its existing experimental gate; initialize the client
    with `capabilities.experimentalApi: true` before using it.
-   Opaque remote compaction is converted to a portable text summary before
-   rebinding the session. Changing providers also summarizes provider-specific
-   tool history using the old provider (an additional model request).
-   Summary failure leaves the provider selection unchanged.
-   Active turns reject provider switching. Existing requests that omit
-   `modelProvider` retain their behavior.
+   At the next user turn, compatible history is replayed without summarization.
+   Unreadable provider-owned state or an insufficient target window requires a
+   readable summary from the original runtime. The summary is checkpointed before
+   activating the target. Failure leaves the active model unchanged and the saved
+   choice pending; it does not silently send the turn to a different provider.
+   Resume restores surviving choices independently of the last active producer.
 5. Save future-thread defaults with `config/batchWrite` for `model_provider`,
    `model`, and `model_reasoning_effort`; respect `okOverridden` responses.
 

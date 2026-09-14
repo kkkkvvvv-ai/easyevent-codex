@@ -135,6 +135,7 @@ mod plugins;
 mod prompt_cache_key;
 mod prompt_caching;
 mod prompt_debug_tests;
+mod provider_handoff_cancel;
 mod provider_switch;
 mod quota_exceeded;
 mod realtime_conversation;
