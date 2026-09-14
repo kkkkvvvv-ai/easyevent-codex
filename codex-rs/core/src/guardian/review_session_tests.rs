@@ -73,6 +73,15 @@ async fn run_review_preserves_evidence_during_parent_compaction() {
             .node_repl_auto_review_required,
     )
     .with_node_repl_policy(&params.node_repl_policy);
+    reviewer.reuse_key.runtime_identity = Some(
+        params
+            .parent_context
+            .turn()
+            .model_runtime
+            .source_for(&params.model)
+            .unwrap()
+            .identity,
+    );
     let manager = GuardianReviewSessionManager::default();
     prewarm_test_session(&manager, reviewer).await;
     // Capture the review context, then compact the parent before the reviewer builds its prompt.
@@ -88,6 +97,7 @@ async fn run_review_preserves_evidence_during_parent_compaction() {
             /*reference_context_item*/ None,
             /*world_state_baseline*/ None,
             crate::compact::CompactedHistoryMetadata {
+                model_source: None,
                 message: String::new(),
                 window_number,
                 window_ids,
@@ -310,6 +320,7 @@ async fn spawned_guardian_reuse_key_matches_inherited_instructions() {
         parent.guardian_context_mode,
     );
     let expected_key = GuardianReviewSessionReuseKey {
+        runtime_identity: None,
         user_instructions: latest_global,
         thread_instructions: latest.clone(),
         ..stale_key.clone()
@@ -1003,6 +1014,15 @@ async fn run_review_removes_trunk_when_event_stream_is_broken() {
     )
     .with_environments(params.parent_context.environments())
     .with_node_repl_policy(&params.node_repl_policy);
+    review_session.reuse_key.runtime_identity = Some(
+        params
+            .parent_context
+            .turn()
+            .model_runtime
+            .source_for(&params.model)
+            .unwrap()
+            .identity,
+    );
     let manager = Arc::new(GuardianReviewSessionManager::default());
     prewarm_test_session(&manager, review_session).await;
     let manager_for_review = Arc::clone(&manager);

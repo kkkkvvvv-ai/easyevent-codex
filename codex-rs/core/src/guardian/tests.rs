@@ -182,6 +182,28 @@ async fn guardian_test_session_turn_and_rx(
     turn_mut.config = Arc::clone(&config);
     turn_mut.provider =
         create_model_provider(config.model_provider.clone(), turn_mut.auth_manager.clone());
+    Arc::make_mut(&mut turn_mut.model_runtime).models = session.services.models_manager.clone();
+    Arc::make_mut(&mut turn_mut.model_runtime).provider = turn_mut.provider.clone();
+    Arc::make_mut(&mut turn_mut.model_runtime).client = session
+        .services
+        .model_client
+        .with_provider(
+            turn_mut.provider.clone(),
+            crate::provider_history::ProviderHistory::default(),
+        )
+        .capture_auth_owner();
+    Arc::make_mut(&mut turn_mut.model_runtime).source =
+        codex_model_provider::model_provider_identity(
+            turn_mut.provider.as_ref(),
+            &config.model_provider_id,
+        )
+        .await
+        .map(|identity| codex_protocol::protocol::ModelOutputSource {
+            provider_id: config.model_provider_id.clone(),
+            model: String::new(),
+            identity,
+        })
+        .map_err(|error| error.to_string());
 
     (session, turn, rx)
 }
@@ -242,6 +264,27 @@ async fn guardian_test_session_and_turn_with_base_url(
     session.services.models_manager = models_manager;
     turn.config = Arc::clone(&config);
     turn.provider = create_model_provider(config.model_provider.clone(), turn.auth_manager.clone());
+    Arc::make_mut(&mut turn.model_runtime).models = session.services.models_manager.clone();
+    Arc::make_mut(&mut turn.model_runtime).provider = turn.provider.clone();
+    Arc::make_mut(&mut turn.model_runtime).client = session
+        .services
+        .model_client
+        .with_provider(
+            turn.provider.clone(),
+            crate::provider_history::ProviderHistory::default(),
+        )
+        .capture_auth_owner();
+    Arc::make_mut(&mut turn.model_runtime).source = codex_model_provider::model_provider_identity(
+        turn.provider.as_ref(),
+        &config.model_provider_id,
+    )
+    .await
+    .map(|identity| codex_protocol::protocol::ModelOutputSource {
+        provider_id: config.model_provider_id.clone(),
+        model: String::new(),
+        identity,
+    })
+    .map_err(|error| error.to_string());
 
     (Arc::new(session), Arc::new(turn))
 }
@@ -1858,6 +1901,19 @@ async fn guardian_reuse_respects_effective_policy_and_personality(
     let (mut session, mut turn) = guardian_test_session_and_turn(&server).await;
     Arc::make_mut(&mut Arc::get_mut(&mut turn).expect("unshared turn").config)
         .guardian_policy_config = configured_policy.map(str::to_owned);
+    Arc::get_mut(&mut session)
+        .expect("unshared session")
+        .services
+        .models_manager = Arc::new(StaticModelsManager::new(
+        /*auth_manager*/ None,
+        ModelsResponse { models: vec![] },
+    ));
+    Arc::make_mut(
+        &mut Arc::get_mut(&mut turn)
+            .expect("unshared turn")
+            .model_runtime,
+    )
+    .models = session.services.models_manager.clone();
     let mut captured = GuardianReviewContext::from(&turn);
     let parent = Arc::make_mut(&mut captured.model_info);
     parent.slug = "captured-parent".to_string();
@@ -1870,13 +1926,6 @@ async fn guardian_reuse_respects_effective_policy_and_personality(
     }))?);
     captured.personality = Some(codex_protocol::config_types::Personality::Friendly);
 
-    Arc::get_mut(&mut session)
-        .expect("unshared session")
-        .services
-        .models_manager = Arc::new(StaticModelsManager::new(
-        /*auth_manager*/ None,
-        ModelsResponse { models: vec![] },
-    ));
     seed_guardian_parent_history(&session, &turn).await;
 
     let mut changed_policy = captured.clone();
@@ -1975,6 +2024,12 @@ async fn guardian_request_model_for_auto_review(
                 .models_manager = Arc::new(models_manager);
         }
     }
+    Arc::make_mut(
+        &mut Arc::get_mut(&mut turn)
+            .expect("turn should be unique")
+            .model_runtime,
+    )
+    .models = session.services.models_manager.clone();
     update_turn_settings_for_test(
         Arc::get_mut(&mut turn).expect("turn should be unique"),
         |settings| {
@@ -2209,6 +2264,27 @@ async fn guardian_review_request_layout_matches_model_visible_request_snapshot()
     session.services.skills_service.clear_cache();
     turn.config = Arc::clone(&config);
     turn.provider = create_model_provider(config.model_provider.clone(), turn.auth_manager.clone());
+    Arc::make_mut(&mut turn.model_runtime).models = session.services.models_manager.clone();
+    Arc::make_mut(&mut turn.model_runtime).provider = turn.provider.clone();
+    Arc::make_mut(&mut turn.model_runtime).client = session
+        .services
+        .model_client
+        .with_provider(
+            turn.provider.clone(),
+            crate::provider_history::ProviderHistory::default(),
+        )
+        .capture_auth_owner();
+    Arc::make_mut(&mut turn.model_runtime).source = codex_model_provider::model_provider_identity(
+        turn.provider.as_ref(),
+        &config.model_provider_id,
+    )
+    .await
+    .map(|identity| codex_protocol::protocol::ModelOutputSource {
+        provider_id: config.model_provider_id.clone(),
+        model: String::new(),
+        identity,
+    })
+    .map_err(|error| error.to_string());
     update_turn_settings_for_test(&mut turn, |settings| {
         Arc::make_mut(&mut settings.model_info).auto_review_model_override =
             Some("codex-auto-review".to_string());
@@ -2501,6 +2577,19 @@ async fn guardian_reuses_prompt_cache_key_and_appends_prior_reviews() -> anyhow:
         .enable(Feature::GuardianReuseParentCompaction)
         .expect("Guardian parent-compaction reuse should be configurable");
     let turn_mut = Arc::get_mut(&mut turn).expect("turn should be unique");
+    let mut reviewer_model = turn_mut
+        .model_runtime
+        .models
+        .get_model_info("codex-auto-review", &config.to_models_manager_config())
+        .await;
+    reviewer_model.comp_hash = Some("guardian-shared".into());
+    let catalog = ModelsResponse {
+        models: vec![reviewer_model],
+    };
+    config.model_catalog = Some(catalog.clone());
+    Arc::make_mut(&mut turn_mut.model_runtime).models = Arc::new(StaticModelsManager::new(
+        /*auth_manager*/ None, catalog,
+    ));
     update_turn_settings_for_test(turn_mut, |settings| {
         Arc::make_mut(&mut settings.model_info).auto_review_model_override =
             Some("codex-auto-review".to_string());
@@ -2605,16 +2694,41 @@ async fn guardian_reuses_prompt_cache_key_and_appends_prior_reviews() -> anyhow:
         1,
         "follow-up reminder should be persisted for guardian forks"
     );
+    let (window_number, window_ids) = session.advance_auto_compact_window().await;
     session
-        .replace_history(
-            vec![
-                ResponseItem::Compaction {
-                    id: Some(codex_protocol::ResponseItemId::from_server(
-                        "cmp_guardian_parent_summary".to_string(),
-                    )),
-                    encrypted_content: "encrypted guardian parent summary".to_string(),
-                    internal_chat_message_metadata_passthrough: None,
-                },
+        .replace_compacted_history(
+            vec![ResponseItem::Compaction {
+                id: Some(codex_protocol::ResponseItemId::from_server(
+                    "cmp_guardian_parent_summary".to_string(),
+                )),
+                encrypted_content: "encrypted guardian parent summary".to_string(),
+                internal_chat_message_metadata_passthrough: None,
+            }]
+            .into_iter()
+            .map(|item| codex_history::ResponseItemEnvelope {
+                item,
+                metadata: Some(codex_history::CodexHarnessMetadata {
+                    model_source: turn.model_runtime.source_for(&turn.model_info().slug).ok(),
+                    ..Default::default()
+                }),
+            })
+            .collect(),
+            /*reference_context_item*/ None,
+            /*world_state_baseline*/ None,
+            crate::compact::CompactedHistoryMetadata {
+                message: String::new(),
+                window_number,
+                window_ids,
+                compaction_response_id: None,
+                compaction_model_hash: Some("guardian-shared".into()),
+            },
+        )
+        .await;
+    session
+        .record_conversation_items(
+            turn.as_ref(),
+            turn.model_info(),
+            &[
                 ResponseItem::Message {
                     id: None,
                     role: "user".to_string(),
@@ -2634,7 +2748,6 @@ async fn guardian_reuses_prompt_cache_key_and_appends_prior_reviews() -> anyhow:
                     internal_chat_message_metadata_passthrough: None,
                 },
             ],
-            /*reference_context_item*/ None,
         )
         .await;
     let third_request = GuardianApprovalRequest::ExecCommand {
@@ -3022,6 +3135,28 @@ async fn guardian_review_surfaces_responses_api_errors_in_rejection_reason() -> 
     turn_mut.config = Arc::clone(&config);
     turn_mut.provider =
         create_model_provider(config.model_provider.clone(), turn_mut.auth_manager.clone());
+    Arc::make_mut(&mut turn_mut.model_runtime).models = session.services.models_manager.clone();
+    Arc::make_mut(&mut turn_mut.model_runtime).provider = turn_mut.provider.clone();
+    Arc::make_mut(&mut turn_mut.model_runtime).client = session
+        .services
+        .model_client
+        .with_provider(
+            turn_mut.provider.clone(),
+            crate::provider_history::ProviderHistory::default(),
+        )
+        .capture_auth_owner();
+    Arc::make_mut(&mut turn_mut.model_runtime).source =
+        codex_model_provider::model_provider_identity(
+            turn_mut.provider.as_ref(),
+            &config.model_provider_id,
+        )
+        .await
+        .map(|identity| codex_protocol::protocol::ModelOutputSource {
+            provider_id: config.model_provider_id.clone(),
+            model: String::new(),
+            identity,
+        })
+        .map_err(|error| error.to_string());
 
     seed_guardian_parent_history(&session, &turn).await;
 
@@ -3885,6 +4020,12 @@ async fn guardian_review_session_config_preserves_context_overrides_for_same_eff
             models: vec![parent_model],
         },
     ));
+    Arc::make_mut(
+        &mut Arc::get_mut(&mut turn)
+            .expect("turn should be unique")
+            .model_runtime,
+    )
+    .models = session.services.models_manager.clone();
     let mut config = (*turn.config).clone();
     config.model = Some("stale-parent-model".to_string());
     config.model_context_window = Some(128_000);

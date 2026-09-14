@@ -232,9 +232,9 @@ pub(super) async fn guardian_review_session_config(
         Some(network_proxy) => Some(network_proxy.proxy().current_cfg().await?),
         None => None,
     };
-    let available_models = session
-        .services
-        .models_manager()
+    let available_models = turn
+        .model_runtime
+        .models
         .list_models(
             codex_models_manager::manager::RefreshStrategy::Offline,
             turn.config.http_client_factory(),
@@ -262,9 +262,8 @@ pub(super) async fn guardian_review_session_config(
             Arc::clone(&context.model_info)
         } else {
             Arc::new(
-                session
-                    .services
-                    .models_manager()
+                turn.model_runtime
+                    .models
                     .get_model_info(
                         guardian_model.as_str(),
                         &turn.config.to_models_manager_config(),

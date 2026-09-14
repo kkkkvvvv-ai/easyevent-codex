@@ -103,9 +103,10 @@ async fn handle_spawn_agent(
     )
     .await?;
     if !args.fork_context {
-        apply_spawn_agent_role(&session, &mut config, role_name).await?;
+        apply_spawn_agent_role(turn.model_runtime.models.as_ref(), &mut config, role_name).await?;
     }
-    apply_spawn_agent_service_tier(&session, &mut config).await?;
+    apply_spawn_agent_service_tier(&session, turn.model_runtime.models.as_ref(), &mut config)
+        .await?;
     apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
 
     let result = Box::pin(session.services.agent_control.spawn_agent_with_metadata(

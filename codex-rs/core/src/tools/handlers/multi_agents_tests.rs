@@ -438,9 +438,13 @@ async fn spawn_agent_service_tier_uses_root_preference_when_root_model_cannot_su
     assert_eq!(root.thread.config_snapshot().await.service_tier, None);
 
     config.model = Some("gpt-5.5".to_string());
-    apply_spawn_agent_service_tier(root.thread.session.as_ref(), &mut config)
-        .await
-        .expect("root preference should be resolved against the child model");
+    apply_spawn_agent_service_tier(
+        root.thread.session.as_ref(),
+        root.thread.session.services.models_manager().as_ref(),
+        &mut config,
+    )
+    .await
+    .expect("root preference should be resolved against the child model");
 
     assert_eq!(
         config.service_tier,
@@ -474,6 +478,7 @@ async fn spawn_agent_service_tier_inheritance_uses_root_preference_and_child_mod
             /*auth_manager*/ None,
             service_tier_test_catalog(),
         ));
+        Arc::make_mut(&mut turn.model_runtime).models = session.services.models_manager.clone();
         session.thread_id = root.thread_id;
 
         let output = SpawnAgentHandler::default()
@@ -520,6 +525,7 @@ async fn spawn_agent_service_tier_inheritance_uses_root_preference_and_child_mod
             /*auth_manager*/ None,
             service_tier_test_catalog(),
         ));
+        Arc::make_mut(&mut turn.model_runtime).models = session.services.models_manager.clone();
         session.thread_id = root.thread_id;
 
         let output = SpawnAgentHandler::default()

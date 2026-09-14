@@ -203,6 +203,7 @@ pub struct GuardianReviewForkSnapshot {
 /// Opaque compatibility key derived by the existing context builder.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GuardianReviewSessionReuseKey {
+    runtime_identity: Option<String>,
     // Only include settings that affect spawned-session behavior and parent
     // history rewrites that invalidate existing reviewer context.
     parent_history_version: u64,
@@ -241,6 +242,7 @@ impl GuardianReviewSessionReuseKey {
         context_mode: GuardianContextMode,
     ) -> Self {
         Self {
+            runtime_identity: None,
             root_authorization_version: None,
             parent_history_version: match ReviewContextPolicy::for_context(
                 context_mode,
@@ -347,9 +349,10 @@ async fn run_review_on_session(
     GuardianReviewAnalyticsResult,
 ) {
     let model_info = params
-        .parent_session
-        .services
-        .models_manager()
+        .parent_context
+        .turn()
+        .model_runtime
+        .models
         .get_model_info(
             params.model.as_str(),
             &params.spawn_config.to_models_manager_config(),

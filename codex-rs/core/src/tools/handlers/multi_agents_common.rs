@@ -265,7 +265,7 @@ pub(crate) fn apply_spawn_agent_runtime_overrides(
 }
 
 pub(crate) async fn apply_requested_spawn_agent_model_overrides(
-    session: &Session,
+    _session: &Session,
     turn: &TurnContext,
     config: &mut Config,
     requested_model: Option<&str>,
@@ -279,9 +279,9 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     }
 
     if let Some(requested_model) = requested_model {
-        let available_models = session
-            .services
-            .models_manager()
+        let available_models = turn
+            .model_runtime
+            .models
             .list_models(RefreshStrategy::Offline, config.http_client_factory())
             .await;
         let selected_model_name = find_spawn_agent_model_name(
@@ -289,9 +289,9 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
             requested_model,
             turn.multi_agent_version,
         )?;
-        let selected_model_info = session
-            .services
-            .models_manager()
+        let selected_model_info = turn
+            .model_runtime
+            .models
             .get_model_info(&selected_model_name, &config.to_models_manager_config())
             .await;
 
@@ -324,6 +324,7 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
 
 pub(crate) async fn apply_spawn_agent_service_tier(
     session: &Session,
+    models: &dyn codex_models_manager::manager::ModelsManager,
     config: &mut Config,
 ) -> Result<(), FunctionCallError> {
     let Some(service_tier) = session.services.agent_control.root_service_tier() else {
@@ -340,9 +341,7 @@ pub(crate) async fn apply_spawn_agent_service_tier(
             "spawn_agent could not resolve the child model for service tier validation".to_string(),
         )
     })?;
-    let model_info = session
-        .services
-        .models_manager()
+    let model_info = models
         .get_model_info(model.as_str(), &config.to_models_manager_config())
         .await;
 
@@ -353,7 +352,7 @@ pub(crate) async fn apply_spawn_agent_service_tier(
 }
 
 pub(crate) async fn apply_spawn_agent_role(
-    session: &Session,
+    models: &dyn codex_models_manager::manager::ModelsManager,
     config: &mut Config,
     role_name: Option<&str>,
 ) -> Result<(), FunctionCallError> {
@@ -376,9 +375,7 @@ pub(crate) async fn apply_spawn_agent_role(
                 .to_string(),
         )
     })?;
-    let model_info = session
-        .services
-        .models_manager()
+    let model_info = models
         .get_model_info(&model, &config.to_models_manager_config())
         .await;
     if model_info.used_fallback_model_metadata {

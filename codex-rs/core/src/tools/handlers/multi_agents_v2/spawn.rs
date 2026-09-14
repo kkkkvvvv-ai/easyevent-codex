@@ -134,14 +134,15 @@ async fn handle_spawn_agent(
     )
     .await?;
     if !is_full_history_fork || role_name.is_some() {
-        apply_spawn_agent_role(&session, &mut config, role_name).await?;
+        apply_spawn_agent_role(turn.model_runtime.models.as_ref(), &mut config, role_name).await?;
         if is_full_history_fork && config.developer_instructions.is_none() {
             config
                 .developer_instructions
                 .clone_from(&turn.developer_instructions);
         }
     }
-    apply_spawn_agent_service_tier(&session, &mut config).await?;
+    apply_spawn_agent_service_tier(&session, turn.model_runtime.models.as_ref(), &mut config)
+        .await?;
     apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
 
     // Remember an applied configured default so cold reload reapplies its restrictions.
@@ -169,21 +170,21 @@ async fn handle_spawn_agent(
         .session_source
         .get_agent_path()
         .unwrap_or_else(AgentPath::root);
-    let communication = communication_from_tool_message(
+    let mut communication = communication_from_tool_message(
         author,
         new_agent_path.clone(),
         message,
         &source,
         /*trigger_turn*/ true,
     );
+    communication.model_source = turn.model_runtime.source_for(&turn.model_info().slug).ok();
     let context = AgentCommunicationContext::new(AgentCommunicationKind::Spawn, session.thread_id);
     let multi_agent_v2_usage_hints =
         if is_full_history_fork && turn.multi_agent_version == MultiAgentVersion::V2 {
             let child_model_info = match config.model.as_deref() {
                 Some(model) if model != turn.model_info().slug => Some(
-                    session
-                        .services
-                        .models_manager()
+                    turn.model_runtime
+                        .models
                         .get_model_info(model, &config.to_models_manager_config())
                         .await,
                 ),

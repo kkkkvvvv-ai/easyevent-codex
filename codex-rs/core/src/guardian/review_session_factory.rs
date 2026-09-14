@@ -13,7 +13,7 @@ pub(super) struct PreparedSession {
     config: Config,
     context_policy: ReviewContextPolicy,
     key: GuardianReviewSessionReuseKey,
-    parent_compaction: Option<ResponseItem>,
+    parent_compaction: Option<codex_history::ResponseItemEnvelope>,
     host: Arc<GuardianReviewSessionHost>,
 }
 
@@ -29,7 +29,32 @@ impl PreparedSession {
         let context_policy =
             ReviewContextPolicy::for_context(parent.guardian_context_mode, &config.features);
         let root_authorization_version = context_policy.root_authorization_version(&parent).await;
+        let source = context
+            .turn()
+            .model_runtime
+            .source_for(&context.model_info.slug)?;
         let parent_compaction = context_policy.parent_compaction(history, compaction_model_hash)?;
+        let parent_compaction = parent_compaction
+            .map(|item| {
+                let envelope = history
+                    .annotated_items()
+                    .iter()
+                    .rev()
+                    .find(|envelope| envelope.item == item)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("Parent checkpoint provenance is missing"))?;
+                anyhow::ensure!(
+                    envelope
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.model_source.as_ref())
+                        .is_some_and(|producer| producer.provider_id == source.provider_id
+                            && producer.identity == source.identity),
+                    "Parent checkpoint belongs to a different provider identity"
+                );
+                Ok::<_, anyhow::Error>(envelope)
+            })
+            .transpose()?;
         let mut key = GuardianReviewSessionReuseKey::from_spawn_config(
             &config,
             parent.inherited_instructions().await,
@@ -39,6 +64,7 @@ impl PreparedSession {
         .with_environments(context.environments())
         .with_node_repl_policy_eligibility(context.model_info.computer_use_review_required())
         .with_node_repl_policy(node_repl_policy);
+        key.runtime_identity = Some(source.identity);
         key.root_authorization_version = root_authorization_version;
         let host = parent
             .services
@@ -96,9 +122,9 @@ impl ReviewerSessionFactory for PreparedSession {
                 snapshot.last_admitted_node_repl_response_sequence,
             ),
             None => (
-                self.parent_compaction.clone().map(|item| {
-                    InitialHistory::Forked(vec![RolloutItem::ResponseItem(item.into())])
-                }),
+                self.parent_compaction
+                    .clone()
+                    .map(|item| InitialHistory::Forked(vec![RolloutItem::ResponseItem(item)])),
                 0,
                 None,
                 0,
@@ -120,7 +146,7 @@ impl ReviewerSessionFactory for PreparedSession {
                 Box::pin(run_codex_thread_interactive(
                     config,
                     Arc::clone(&self.parent.services.auth_manager),
-                    self.parent.services.models_manager().clone(),
+                    self.context.turn().model_runtime.models.clone(),
                     Arc::clone(&self.parent),
                     Arc::clone(self.context.turn()),
                     self.context.environments().clone(),

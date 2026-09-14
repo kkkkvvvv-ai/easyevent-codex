@@ -96,13 +96,14 @@ pub(super) async fn handle_message_string_tool(
         .session_source
         .get_agent_path()
         .unwrap_or_else(AgentPath::root);
-    let communication = communication_from_tool_message(
+    let mut communication = communication_from_tool_message(
         author,
         receiver_agent_path.clone(),
         message,
         &source,
         mode.trigger_turn(),
     );
+    communication.model_source = turn.model_runtime.source_for(&turn.model_info().slug).ok();
     let kind = match mode {
         MessageDeliveryMode::QueueOnly => AgentCommunicationKind::Message,
         MessageDeliveryMode::TriggerTurn => AgentCommunicationKind::Followup,
