@@ -4148,6 +4148,27 @@ impl ThreadRequestProcessor {
         let InitialHistory::Resumed(resumed_history) = thread_history else {
             return None;
         };
+        if let Some(selection) =
+            codex_core::latest_persisted_model_selection(&resumed_history.history)
+        {
+            let explicit = request_overrides.as_ref();
+            if typesafe_overrides.model.is_none()
+                && !explicit.is_some_and(|values| values.contains_key("model"))
+            {
+                typesafe_overrides.model = Some(selection.model);
+            }
+            if typesafe_overrides.model_provider.is_none()
+                && !explicit.is_some_and(|values| values.contains_key("model_provider"))
+            {
+                typesafe_overrides.model_provider = Some(selection.model_provider);
+            }
+            if !explicit.is_some_and(|values| values.contains_key("model_reasoning_effort")) {
+                request_overrides.get_or_insert_default().insert(
+                    "model_reasoning_effort".into(),
+                    serde_json::json!(selection.reasoning_effort),
+                );
+            }
+        }
         if let Some(persisted_settings) = latest_persisted_resume_settings(&resumed_history.history)
         {
             if typesafe_overrides.approval_policy.is_none() {

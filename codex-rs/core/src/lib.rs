@@ -218,3 +218,7 @@ pub mod otel_init;
 
 // Captured environment bindings can be passed back to ThreadManager by internal reviewers.
 pub use environment_selection::TurnEnvironmentSnapshot;
+
+mod thread_model_selection;
+pub use thread_model_selection::PersistedModelSelection;
+pub use thread_model_selection::latest_persisted_model_selection;
