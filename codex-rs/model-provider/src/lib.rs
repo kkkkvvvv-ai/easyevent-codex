@@ -11,6 +11,8 @@ pub use responses_setup::discover_responses_models;
 pub use responses_setup::validate_responses_key;
 mod models_endpoint;
 mod models_identity;
+mod runtime_identity;
+pub use runtime_identity::model_provider_identity;
 mod provider;
 mod shared_state;
 pub mod test_support;
