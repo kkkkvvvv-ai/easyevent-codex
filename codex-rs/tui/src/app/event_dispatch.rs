@@ -1845,7 +1845,7 @@ impl App {
             }
             AppEvent::FetchModels { request_id } => {
                 if self.chat_widget.model_popup_request_is_current(request_id) {
-                    app_server.fetch_models(request_id, self.app_event_tx.clone());
+                    app_server.fetch_provider_models(request_id, self.app_event_tx.clone(), Some(self.chat_widget.config_ref().model_provider_id.clone()));
                 }
             }
             AppEvent::ModelsLoaded { request_id, result } => {
@@ -1918,6 +1918,9 @@ impl App {
             }
             AppEvent::OpenAllModelsPopup => {
                 self.chat_widget.open_all_models_popup();
+            }
+            AppEvent::ProviderSetup(event) => {
+                self.handle_provider_setup(app_server, *event);
             }
             AppEvent::OpenFullAccessConfirmation {
                 preset,

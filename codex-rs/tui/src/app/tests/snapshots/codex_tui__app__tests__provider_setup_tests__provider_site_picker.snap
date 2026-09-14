@@ -1,0 +1,12 @@
+---
+source: tui/src/app/tests/provider_setup_tests.rs
+assertion_line: 17
+expression: "render_bottom_popup(&app.chat_widget, 84)"
+---
+  Select Provider Site
+  Each site uses a separate API key.
+
+› 1. GLM (China)                 Paste an API key to connect
+  2. GLM (International / Z.AI)  Paste an API key to connect
+
+  Press enter to confirm or esc to go back

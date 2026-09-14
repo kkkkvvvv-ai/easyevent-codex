@@ -41,6 +41,8 @@ mod patch_approval_tests;
 #[path = "tests/permission_shortcuts_tests.rs"]
 mod permission_shortcuts_tests;
 mod plugin_catalog;
+#[path = "tests/provider_setup_tests.rs"]
+mod provider_setup_tests;
 mod rate_limits;
 #[path = "tests/realtime_handoff_e2e.rs"]
 mod realtime_handoff_e2e;

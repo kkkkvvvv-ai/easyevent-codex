@@ -47,15 +47,18 @@ impl ChatWidget {
             view_id: Some(view_id),
             header,
             footer_hint: Some(self.bottom_pane.standard_popup_hint_line()),
-            items: vec![SelectionItem {
-                name,
-                description,
-                is_current: true,
-                actions,
-                dismiss_on_select: single_supported_effort,
-                dismiss_parent_on_child_accept: !single_supported_effort,
-                ..Default::default()
-            }],
+            items: vec![
+                SelectionItem {
+                    name,
+                    description,
+                    is_current: true,
+                    actions,
+                    dismiss_on_select: single_supported_effort,
+                    dismiss_parent_on_child_accept: !single_supported_effort,
+                    ..Default::default()
+                },
+                crate::app::providers::provider_selection_item(),
+            ],
             ..Default::default()
         });
     }

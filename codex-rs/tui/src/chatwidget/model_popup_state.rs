@@ -5,6 +5,13 @@ use super::model_popups::MODEL_SELECTION_VIEW_ID;
 use super::*;
 
 impl ChatWidget {
+    pub(crate) fn replace_provider_catalog(&mut self, models: Vec<ModelPreset>) {
+        self.model_popup_request_id = None;
+        Arc::make_mut(&mut self.model_catalog).models = models;
+        self.refresh_effective_service_tier();
+        self.refresh_model_dependent_surfaces();
+    }
+
     fn model_popup_view_id(&self) -> Option<&'static str> {
         [MODEL_SELECTION_VIEW_ID, ALL_MODELS_SELECTION_VIEW_ID]
             .into_iter()

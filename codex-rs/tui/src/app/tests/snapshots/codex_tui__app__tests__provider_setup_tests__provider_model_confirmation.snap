@@ -1,0 +1,12 @@
+---
+source: tui/src/app/tests/provider_setup_tests.rs
+assertion_line: 23
+expression: rendered
+---
+  Select a model to validate
+  A short test request may incur a small API charge. Esc cancels without saving.
+
+› 1. glm-5.3 (default)
+  2. glm-5-turbo
+
+  Press enter to confirm or esc to go back

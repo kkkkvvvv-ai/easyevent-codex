@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/bedrock_catalog_tests.rs
+assertion_line: 42
 expression: "render_bottom_popup(&chat, 100)"
 ---
   Select Model and Effort
@@ -12,5 +13,6 @@ expression: "render_bottom_popup(&chat, 100)"
   5. openai.gpt-5.5                Frontier model for complex coding, research, and real-world
                                    work.
   6. openai.gpt-5.4                Strong model for everyday coding.
+  7. Switch / connect provider     DeepSeek, GLM, Kimi, HY, MiniMax, OpenRouter
 
   Press enter to confirm or esc to go back

@@ -1206,6 +1206,7 @@ pub(crate) enum AppEvent {
 
     /// Open the full model picker (non-auto models).
     OpenAllModelsPopup,
+    ProviderSetup(Box<crate::app::providers::ProviderSetupEvent>),
 
     /// Open the confirmation prompt before enabling full access mode.
     OpenFullAccessConfirmation {

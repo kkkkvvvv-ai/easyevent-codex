@@ -270,7 +270,8 @@ fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: 
 }
 
 fn thread_settings_update_has_changes(params: &ThreadSettingsUpdateParams) -> bool {
-    params.cwd.is_some()
+    params.model_provider.is_some()
+        || params.cwd.is_some()
         || params.approval_policy.is_some()
         || params.approvals_reviewer.is_some()
         || params.sandbox_policy.is_some()

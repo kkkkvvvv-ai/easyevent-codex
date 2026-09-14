@@ -7,6 +7,24 @@ use crate::terminal_probe::DefaultColors;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
+#[tokio::test]
+async fn luna_reserve_model_picker_keeps_provider_setup_available() {
+    let (mut chat, mut events, _ops) = make_chatwidget_manual(Some("gpt-reserve")).await;
+    chat.open_luna_reserve_model_popup(
+        crate::test_support::TEST_MODEL_PRESETS.clone(),
+        "provider-reserve-model",
+    );
+    assert_chatwidget_snapshot!(
+        "provider_setup_from_reserve",
+        render_bottom_popup(&chat, /*width*/ 90)
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    assert!(std::iter::from_fn(|| events.try_recv().ok()).any(|event| matches!(event,
+        AppEvent::ProviderSetup(setup) if matches!(*setup, crate::app::providers::ProviderSetupEvent::Open)
+    )));
+}
+
 fn reserve_snapshot(primary_used: i32, weekly_used: i32) -> RateLimitSnapshot {
     RateLimitSnapshot {
         limit_id: Some("base_model_inference".into()),

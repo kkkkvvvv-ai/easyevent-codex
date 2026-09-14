@@ -4,6 +4,7 @@
 //! into another, especially while Plan mode is active.
 
 use super::*;
+use crate::app::providers::provider_selection_item;
 use crate::model_catalog::LUNA_RESERVE_MODEL;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
@@ -173,6 +174,7 @@ impl ChatWidget {
             "Select Model",
             "Pick a quick auto mode or browse all models.",
         );
+        items.push(provider_selection_item());
         self.show_model_selection_view(SelectionViewParams {
             view_id: Some(MODEL_SELECTION_VIEW_ID),
             footer_hint: Some(standard_popup_hint_line()),
@@ -256,6 +258,7 @@ impl ChatWidget {
             "Select Model and Effort",
             "Access legacy models by running codex -m <model_name> or in your config.toml",
         );
+        items.push(provider_selection_item());
         self.show_model_selection_view(SelectionViewParams {
             view_id: Some(view_id),
             footer_hint: Some(self.bottom_pane.standard_popup_hint_line()),

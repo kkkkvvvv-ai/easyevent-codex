@@ -228,6 +228,7 @@ mod managed_worktree_creation;
 mod misalignment_policy;
 mod model_defaults;
 mod new_session;
+pub(crate) mod providers;
 pub(crate) use new_session::has_launch_setting;
 mod pending_interactive_replay;
 mod permission_shortcuts;
