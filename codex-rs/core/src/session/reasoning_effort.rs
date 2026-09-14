@@ -26,9 +26,16 @@ impl Session {
     /// Establishes the selected effort in surviving history, independent of replayed settings.
     pub(crate) async fn record_reasoning_effort_override(&self, step_context: &StepContext) {
         let settings = &step_context.settings;
-        let Some(effort) = self.effort_for_configuration_update(settings).await else {
+        let Some(effort) =
+            self.effort_for_configuration_update(settings, step_context.turn.provider.info())
+        else {
             return;
         };
+        let source = step_context
+            .turn
+            .model_runtime
+            .source_for(&settings.model_info.slug)
+            .ok();
         let should_skip = {
             let mut state = self.state.lock().await;
             if matches!(state.reasoning_effort_pin, ReasoningEffortPin::Compacted) {
@@ -45,11 +52,9 @@ impl Session {
                 .rev()
                 .enumerate()
                 .find_map(|(index, envelope)| {
-                    if !envelope
-                        .metadata
-                        .as_ref()
-                        .is_some_and(|metadata| metadata.harness_authored_configuration)
-                    {
+                    if !envelope.metadata.as_ref().is_some_and(|metadata| {
+                        metadata.harness_authored_configuration && metadata.model_source == source
+                    }) {
                         return None;
                     }
                     match &envelope.item {
@@ -82,6 +87,11 @@ impl Session {
                 },
                 metadata: Some(CodexHarnessMetadata {
                     harness_authored_configuration: true,
+                    model_source: step_context
+                        .turn
+                        .model_runtime
+                        .source_for(&settings.model_info.slug)
+                        .ok(),
                     ..Default::default()
                 }),
             }],
@@ -93,6 +103,7 @@ impl Session {
     pub(crate) async fn reasoning_effort_for_request(
         &self,
         settings: &ResolvedStepSettings,
+        provider: &codex_model_provider_info::ModelProviderInfo,
         usage: RequestEffortUsage,
     ) -> Option<ReasoningEffort> {
         let selected_effort = settings.reasoning_effort().cloned();
@@ -109,7 +120,7 @@ impl Session {
         {
             return Some(pinned);
         }
-        let effort = self.effort_for_configuration_update(settings).await;
+        let effort = self.effort_for_configuration_update(settings, provider);
         let mut state = self.state.lock().await;
         let Some(effort) = effort else {
             if usage == RequestEffortUsage::Sampling {
@@ -126,13 +137,14 @@ impl Session {
         })
     }
 
-    async fn effort_for_configuration_update(
+    fn effort_for_configuration_update(
         &self,
         settings: &ResolvedStepSettings,
+        provider: &codex_model_provider_info::ModelProviderInfo,
     ) -> Option<ReasoningEffort> {
         if !self.enabled(Feature::ReasoningEffortOverride)
             || !settings.model_info.use_responses_lite
-            || !self.provider().await.is_openai()
+            || !provider.is_openai()
         {
             return None;
         }

@@ -86,6 +86,7 @@ pub(crate) struct CompactedHistoryMetadata {
     pub(crate) window_ids: AutoCompactWindowIds,
     pub(crate) compaction_response_id: Option<String>,
     pub(crate) compaction_model_hash: Option<String>,
+    pub(crate) model_source: Option<codex_protocol::protocol::ModelOutputSource>,
 }
 
 pub(crate) async fn build_compaction_initial_context(
@@ -262,9 +263,13 @@ async fn run_compact_task_inner_impl(
 
     let compaction_response_id = loop {
         // Clone is required because of the loop
-        let mut turn_input = history
-            .clone()
-            .for_prompt(&turn_context.model_info().input_modalities);
+        let mut turn_input = history.clone().for_model_source(
+            &turn_context
+                .model_runtime
+                .source_for(&turn_context.model_info().slug)?,
+            turn_context.model_info(),
+            turn_context.provider.capabilities(),
+        )?;
         sess.services
             .executed_tool_calls
             .strip_disabled_direct_metadata(&mut turn_input);
@@ -383,6 +388,10 @@ async fn run_compact_task_inner_impl(
         reference_context_item,
         world_state_baseline,
         CompactedHistoryMetadata {
+            model_source: turn_context
+                .model_runtime
+                .source_for(&turn_context.model_info().slug)
+                .ok(),
             message: summary_text,
             window_number,
             window_ids,
@@ -767,6 +776,7 @@ async fn drain_to_completed(
             &turn_context.session_telemetry,
             sess.reasoning_effort_for_request(
                 &turn_context.initial_settings,
+                turn_context.provider.info(),
                 RequestEffortUsage::Compaction,
             )
             .await,

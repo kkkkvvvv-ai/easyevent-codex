@@ -114,19 +114,38 @@ impl Session {
         model_info: &ModelInfo,
         items: Vec<ResponseItemEnvelope>,
     ) {
-        if items.iter().all(|item| item.metadata.is_none()) {
-            let items = items
-                .into_iter()
-                .map(ResponseItemEnvelope::into_item)
-                .collect::<Vec<_>>();
-            self.record_conversation_items(turn_context, model_info, &items)
-                .await;
-            return;
-        }
-
         let mut annotated_items = Vec::with_capacity(items.len());
         let mut image_preparations = Vec::new();
-        for envelope in items {
+        let history = self.clone_history().await;
+        for mut envelope in items {
+            let output_id = match &envelope.item {
+                ResponseItem::FunctionCallOutput { call_id, .. }
+                | ResponseItem::ToolSearchOutput { call_id, .. } => call_id.as_deref(),
+                ResponseItem::CustomToolCallOutput { call_id, .. } => Some(call_id.as_str()),
+                _ => None,
+            };
+            if let Some(id) = output_id
+                && let Some(source) = history.annotated_items().iter().rev().find_map(|call| {
+                    let matches = match &call.item {
+                        ResponseItem::FunctionCall { call_id, .. }
+                        | ResponseItem::CustomToolCall { call_id, .. } => call_id == id,
+                        ResponseItem::ToolSearchCall {
+                            call_id: Some(call_id),
+                            ..
+                        } => call_id == id,
+                        _ => false,
+                    };
+                    matches
+                        .then(|| call.metadata.as_ref()?.model_source.clone())
+                        .flatten()
+                })
+            {
+                envelope
+                    .metadata
+                    .get_or_insert_default()
+                    .model_source
+                    .get_or_insert(source);
+            }
             let (prepared_items, prepared_images) = self.prepare_conversation_items_for_history(
                 turn_context,
                 model_info,

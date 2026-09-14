@@ -90,7 +90,7 @@ fn project_annotated(
                     .as_ref()
                     .and_then(|metadata| metadata.compaction_model_hash.as_deref())
                     .zip(compaction_hash)
-                    .is_some_and(|(old, new)| old == new));
+                    .is_some_and(|(old, new)| !old.is_empty() && old == new));
         let mut item = envelope.item;
         match &mut item {
             ResponseItem::Reasoning { .. } if !same_source => continue,
@@ -127,7 +127,12 @@ fn project_annotated(
                 recipient,
                 content,
                 ..
-            } if !same_runtime => {
+            } if !same_runtime
+                && (!capabilities.namespace_tools
+                    || content.iter().any(|part| {
+                        matches!(part, AgentMessageInputContent::EncryptedContent { .. })
+                    })) =>
+            {
                 let mut content = content
                     .iter()
                     .map(|part| match part {
@@ -164,9 +169,13 @@ fn project_annotated(
                 return Err(handoff_required());
             }
             ResponseItem::AdditionalTools { .. }
-            | ResponseItem::LocalShellCall { .. }
             | ResponseItem::ToolSearchCall { .. }
             | ResponseItem::ToolSearchOutput { .. }
+                if !same_runtime && !capabilities.namespace_tools =>
+            {
+                return Err(handoff_required());
+            }
+            ResponseItem::LocalShellCall { .. }
             | ResponseItem::WebSearchCall { .. }
             | ResponseItem::ImageGenerationCall { .. }
                 if !same_runtime =>
@@ -178,14 +187,26 @@ fn project_annotated(
         let host_message =
             matches!(&item, ResponseItem::Message { role, .. } if role != "assistant");
         if !same_runtime && !host_message {
-            item.set_id(None);
+            if !envelope
+                .metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.synthesized_tool_output)
+            {
+                item.set_id(None);
+            }
             item.clear_internal_chat_message_metadata_passthrough();
         }
         match &mut item {
             ResponseItem::FunctionCall { call_id, .. }
             | ResponseItem::CustomToolCall { call_id, .. } => {
                 let original = call_id.clone();
-                if !same_runtime || calls.contains_key(&original) {
+                if calls.contains_key(&original)
+                    || (!same_runtime
+                        && (original.len() > 64
+                            || !original.bytes().all(|byte| {
+                                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+                            })))
+                {
                     let mut candidate = format!("codex_history_{index}");
                     while !used_ids.insert(candidate.clone()) {
                         candidate.push('_');

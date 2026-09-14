@@ -114,7 +114,8 @@ async fn reasoning_effort_override_recovery_reuses_trusted_tail_update() -> anyh
         .await
         .expect("unload suspended thread");
 
-    let recovery_server = responses::start_mock_server().await;
+    server.reset().await;
+    let recovery_server = server;
     let mock = responses::mount_sse_once(
         &recovery_server,
         responses::sse(vec![responses::ev_completed("recovered")]),
@@ -678,7 +679,10 @@ async fn reasoning_effort_override_disabled_on_resume_retires_update_at_compacti
         ],
     )
     .await;
-    let initial = override_builder().build_with_auto_env(&server).await?;
+    let initial = override_builder()
+        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .build_with_auto_env(&server)
+        .await?;
     initial.submit_text_turn("before resume").await?;
     let chatgpt_base_url = format!("{}/backend-api", server.uri());
     let resumed = override_builder()

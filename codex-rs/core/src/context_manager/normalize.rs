@@ -133,6 +133,10 @@ pub(crate) fn ensure_call_outputs_present(items: &mut Vec<ResponseItemEnvelope>)
 
     // Insert synthetic outputs in reverse index order to avoid re-indexing.
     for (idx, mut output_item) in missing_outputs_to_insert.into_iter().rev() {
+        output_item
+            .metadata
+            .get_or_insert_default()
+            .synthesized_tool_output = true;
         if let Some(source) = items[idx]
             .metadata
             .as_ref()

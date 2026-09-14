@@ -187,10 +187,7 @@ async fn guardian_test_session_turn_and_rx(
     Arc::make_mut(&mut turn_mut.model_runtime).client = session
         .services
         .model_client
-        .with_provider(
-            turn_mut.provider.clone(),
-            crate::provider_history::ProviderHistory::default(),
-        )
+        .with_provider(turn_mut.provider.clone())
         .capture_auth_owner();
     Arc::make_mut(&mut turn_mut.model_runtime).source =
         codex_model_provider::model_provider_identity(
@@ -269,10 +266,7 @@ async fn guardian_test_session_and_turn_with_base_url(
     Arc::make_mut(&mut turn.model_runtime).client = session
         .services
         .model_client
-        .with_provider(
-            turn.provider.clone(),
-            crate::provider_history::ProviderHistory::default(),
-        )
+        .with_provider(turn.provider.clone())
         .capture_auth_owner();
     Arc::make_mut(&mut turn.model_runtime).source = codex_model_provider::model_provider_identity(
         turn.provider.as_ref(),
@@ -2269,10 +2263,7 @@ async fn guardian_review_request_layout_matches_model_visible_request_snapshot()
     Arc::make_mut(&mut turn.model_runtime).client = session
         .services
         .model_client
-        .with_provider(
-            turn.provider.clone(),
-            crate::provider_history::ProviderHistory::default(),
-        )
+        .with_provider(turn.provider.clone())
         .capture_auth_owner();
     Arc::make_mut(&mut turn.model_runtime).source = codex_model_provider::model_provider_identity(
         turn.provider.as_ref(),
@@ -2716,6 +2707,7 @@ async fn guardian_reuses_prompt_cache_key_and_appends_prior_reviews() -> anyhow:
             /*reference_context_item*/ None,
             /*world_state_baseline*/ None,
             crate::compact::CompactedHistoryMetadata {
+                model_source: turn.model_runtime.source_for(&turn.model_info().slug).ok(),
                 message: String::new(),
                 window_number,
                 window_ids,
@@ -3140,10 +3132,7 @@ async fn guardian_review_surfaces_responses_api_errors_in_rejection_reason() -> 
     Arc::make_mut(&mut turn_mut.model_runtime).client = session
         .services
         .model_client
-        .with_provider(
-            turn_mut.provider.clone(),
-            crate::provider_history::ProviderHistory::default(),
-        )
+        .with_provider(turn_mut.provider.clone())
         .capture_auth_owner();
     Arc::make_mut(&mut turn_mut.model_runtime).source =
         codex_model_provider::model_provider_identity(

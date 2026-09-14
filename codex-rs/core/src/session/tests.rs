@@ -5386,6 +5386,7 @@ async fn settings_checkpoint_waits_for_accepted_settings_persistence() {
             /*reference_context_item*/ None,
             /*world_state_baseline*/ None,
             CompactedHistoryMetadata {
+                model_source: None,
                 message: "summary".to_string(),
                 window_number,
                 window_ids,

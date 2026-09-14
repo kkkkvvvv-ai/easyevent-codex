@@ -340,6 +340,10 @@ async fn run_remote_compact_task_inner_impl(
         reference_context_item,
         world_state_baseline,
         CompactedHistoryMetadata {
+            model_source: compaction_turn_context
+                .model_runtime
+                .source_for(&compaction_turn_context.model_info().slug)
+                .ok(),
             message: String::new(),
             window_number: new_window_number,
             window_ids: new_window_ids,
@@ -383,6 +387,7 @@ async fn run_remote_compaction_request_v2(
                 &turn_context.session_telemetry,
                 sess.reasoning_effort_for_request(
                     &turn_context.initial_settings,
+                    turn_context.provider.info(),
                     RequestEffortUsage::Compaction,
                 )
                 .await,

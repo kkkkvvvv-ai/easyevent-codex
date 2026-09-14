@@ -872,16 +872,32 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
             start_options: Default::default(),
         })
         .await?;
+    codex.flush_rollout().await?;
+    let source = codex
+        .load_history(/*include_archived*/ false)
+        .await?
+        .items
+        .into_iter()
+        .rev()
+        .find_map(|item| match item {
+            RolloutItem::ResponseItem(envelope) => envelope.metadata?.model_source,
+            _ => None,
+        })
+        .context("producer identity from first response")?;
+    let sourced_communication = |mut communication: InterAgentCommunication| {
+        communication.model_source = Some(source.clone());
+        communication
+    };
     let delegated_task_ciphertext = format!("delegated compact task{}", "x".repeat(40_000));
     codex
         .submit(Op::InterAgentCommunication {
-            communication: InterAgentCommunication::new_encrypted(
+            communication: sourced_communication(InterAgentCommunication::new_encrypted(
                 AgentPath::root(),
                 AgentPath::root().join("worker").expect("valid worker path"),
                 Vec::new(),
                 delegated_task_ciphertext.clone(),
                 /*trigger_turn*/ true,
-            ),
+            )),
             start_options: Default::default(),
         })
         .await?;
@@ -891,13 +907,13 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
     let worker_path = AgentPath::root().join("worker").expect("valid worker path");
     codex
         .submit(Op::InterAgentCommunication {
-            communication: InterAgentCommunication::new_encrypted(
+            communication: sourced_communication(InterAgentCommunication::new_encrypted(
                 worker_path.join("child").expect("valid grandchild path"),
                 worker_path,
                 Vec::new(),
                 descendant_followup_ciphertext.to_string(),
                 /*trigger_turn*/ true,
-            ),
+            )),
             start_options: Default::default(),
         })
         .await?;

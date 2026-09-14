@@ -1,4 +1,3 @@
-use crate::context::GuardianContextMode;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -1834,12 +1833,7 @@ impl Session {
                 let config = &updated.original_config_do_not_use;
                 self.services.provider_runtime.store(Some(Arc::new(
                     crate::state::ProviderRuntime {
-                        model_client: self.services.model_client().with_provider(
-                            provider.clone(),
-                            crate::provider_history::ProviderHistory::from_items(
-                                state.clone_history().raw_items(),
-                            ),
-                        ),
+                        model_client: self.services.model_client().with_provider(provider.clone()),
                         models_manager: provider.models_manager(
                             config.codex_home.to_path_buf(),
                             /*config_model_catalog*/ None,
@@ -2449,13 +2443,17 @@ impl Session {
             .rollout_thread_trace
             .is_enabled()
             .then(|| message.clone());
-        let communication = InterAgentCommunication::new(
+        let mut communication = InterAgentCommunication::new(
             child_agent_path.clone(),
             parent_agent_path,
             Vec::new(),
             message,
             /*trigger_turn*/ false,
         );
+        communication.model_source = turn_context
+            .model_runtime
+            .source_for(&turn_context.model_info().slug)
+            .ok();
         let context =
             AgentCommunicationContext::new(AgentCommunicationKind::Result, self.thread_id);
         if let Err(err) = self
@@ -3552,7 +3550,16 @@ impl Session {
         let items = items
             .into_owned()
             .into_iter()
-            .map(ResponseItemEnvelope::new)
+            .map(|item| {
+                let mut envelope = ResponseItemEnvelope::new(item);
+                if !matches!(&envelope.item, ResponseItem::AgentMessage { .. })
+                    && !matches!(&envelope.item, ResponseItem::Message { role, .. } if role != "assistant")
+                    && let Ok(source) = turn_context.model_runtime.source_for(&model_info.slug)
+                {
+                    envelope.metadata.get_or_insert_default().model_source = Some(source);
+                }
+                envelope
+            })
             .collect();
         self.record_prepared_conversation_items(
             turn_context,
@@ -3586,6 +3593,8 @@ impl Session {
                     .get_or_insert_with(|| with_serialization_allowance(policy).token_budget());
             }
         }
+        // Serialize durable history appends with provider handoff checkpoints.
+        let persistence_guard = thread_settings::acquire_persistence_lock(self).await;
         let response_items = items
             .iter()
             .map(|envelope| envelope.item.clone())
@@ -3610,6 +3619,7 @@ impl Session {
         let rollout_items: Vec<RolloutItem> =
             items.into_iter().map(RolloutItem::ResponseItem).collect();
         self.persist_rollout_items(&rollout_items).await;
+        drop(persistence_guard);
         if turn_context.config.memories.disable_on_external_context
             && let Some(item) = response_items
                 .iter()
@@ -3874,19 +3884,32 @@ impl Session {
             std::slice::from_ref(&response_item),
         );
         let items = items.as_ref();
-        let response_item = items[0].clone();
+        let response_item = ResponseItemEnvelope {
+            item: items[0].clone(),
+            metadata: communication.model_source.clone().map(|source| {
+                codex_history::CodexHarnessMetadata {
+                    model_source: Some(source),
+                    ..Default::default()
+                }
+            }),
+        };
+        let persistence_guard = thread_settings::acquire_persistence_lock(self).await;
         {
             let mut state = self.state.lock().await;
             state.current_time_reminder.note_recorded_items(items);
-            state.record_items(items.iter(), model_info.truncation_policy.into());
+            state.history.record_annotated_items(
+                std::slice::from_ref(&response_item),
+                model_info.truncation_policy.into(),
+            );
         }
         self.persist_rollout_items(&[
             RolloutItem::InterAgentCommunicationMetadata {
                 trigger_turn: communication.trigger_turn,
             },
-            RolloutItem::ResponseItem(response_item.into()),
+            RolloutItem::ResponseItem(response_item),
         ])
         .await;
+        drop(persistence_guard);
         self.send_raw_response_items(turn_context, items).await;
     }
 
@@ -3970,15 +3993,22 @@ impl Session {
     ) {
         for envelope in &mut items {
             Self::assign_missing_response_item_id(&mut envelope.item);
+            if matches!(
+                envelope.item,
+                ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. }
+            ) {
+                let meta = envelope.metadata.get_or_insert_default();
+                if meta.model_source.is_none() {
+                    meta.model_source = metadata.model_source.clone();
+                }
+            }
         }
-        if self.guardian_context_mode == GuardianContextMode::ThreadOwned
-            && let Some(checkpoint) = items.iter_mut().rev().find(|envelope| {
-                matches!(
-                    envelope.item,
-                    ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. }
-                )
-            })
-        {
+        if let Some(checkpoint) = items.iter_mut().rev().find(|envelope| {
+            matches!(
+                envelope.item,
+                ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. }
+            )
+        }) {
             checkpoint
                 .metadata
                 .get_or_insert_default()
@@ -4458,6 +4488,7 @@ impl Session {
             Some(turn_context_item),
             Some(world_state),
             CompactedHistoryMetadata {
+                model_source: None,
                 message: String::new(),
                 window_number,
                 window_ids,

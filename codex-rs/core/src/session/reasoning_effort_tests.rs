@@ -37,7 +37,11 @@ async fn initial_replay_preserves_prewarmed_effort(history: InitialHistory) {
     // Force the ordering where prewarm pins its request before initial replay finishes.
     assert_eq!(
         session
-            .reasoning_effort_for_request(&prewarm_settings, RequestEffortUsage::Sampling)
+            .reasoning_effort_for_request(
+                &prewarm_settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Sampling
+            )
             .await,
         Some(ReasoningEffort::Medium),
     );
@@ -51,7 +55,11 @@ async fn initial_replay_preserves_prewarmed_effort(history: InitialHistory) {
     );
     assert_eq!(
         session
-            .reasoning_effort_for_request(&turn_settings, RequestEffortUsage::Sampling)
+            .reasoning_effort_for_request(
+                &turn_settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Sampling
+            )
             .await,
         Some(ReasoningEffort::Medium),
     );
@@ -79,7 +87,11 @@ async fn compaction_effort_lookup_preserves_pin_for_fallback_models() {
 
     assert_eq!(
         session
-            .reasoning_effort_for_request(&settings, RequestEffortUsage::Compaction)
+            .reasoning_effort_for_request(
+                &settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Compaction
+            )
             .await,
         Some(effort)
     );

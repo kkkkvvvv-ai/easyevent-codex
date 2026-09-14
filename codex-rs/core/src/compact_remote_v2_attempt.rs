@@ -67,7 +67,13 @@ pub(super) async fn run_remote_compact_v2_attempt(
         .is_enabled()
         .then(|| history.raw_items().cloned().collect());
     let (mut input, prompt_input_metadata): (Vec<_>, Vec<_>) = history
-        .for_prompt_annotated(&turn_context.model_info().input_modalities)
+        .for_model_source_annotated(
+            &turn_context
+                .model_runtime
+                .source_for(&turn_context.model_info().slug)?,
+            turn_context.model_info(),
+            turn_context.provider.capabilities(),
+        )?
         .into_iter()
         .map(|envelope| (envelope.item, envelope.metadata))
         .unzip();
@@ -99,7 +105,7 @@ pub(super) async fn run_remote_compact_v2_attempt(
     let mut owned_client_session = None;
     let client_session = match client_session {
         Some(client_session) => client_session,
-        None => owned_client_session.insert(sess.services.model_client().new_session()),
+        None => owned_client_session.insert(turn_context.model_runtime.client.new_session()),
     };
     let compaction_output_result = run_remote_compaction_request_v2(
         sess,

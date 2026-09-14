@@ -1655,7 +1655,6 @@ provider_runtime: arc_swap::ArcSwapOption::empty(),
                     attestation_provider,
                     config.http_client_factory(),
                 )
-                .with_provider_history(crate::provider_history::ProviderHistory::from_rollout(initial_history.get_rollout_items(), &config.model_provider_id))
                 .with_free_guardian_enabled(config.free_guardian_enabled())
                 .with_session_context(
                     crate::guardian::prompt_cache_key_override_for_review_session(

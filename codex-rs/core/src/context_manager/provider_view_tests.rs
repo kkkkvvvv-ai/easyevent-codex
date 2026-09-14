@@ -63,8 +63,8 @@ fn projects_tool_pairs_and_drops_foreign_reasoning_without_mutating_history() {
     assert_eq!(
         values,
         vec![
-            json!({"type":"custom_tool_call","call_id":"codex_history_1","name":"apply_patch","input":"patch"}),
-            json!({"type":"custom_tool_call_output","call_id":"codex_history_1","output":"file changed"}),
+            json!({"type":"custom_tool_call","call_id":"duplicate","name":"apply_patch","input":"patch"}),
+            json!({"type":"custom_tool_call_output","call_id":"duplicate","output":"file changed"}),
             json!({"type":"function_call","call_id":"codex_history_3","name":"read","arguments":"{}"}),
             json!({"type":"function_call_output","call_id":"codex_history_3","output":"new contents"}),
         ]
@@ -116,6 +116,35 @@ fn opaque_state_needs_matching_provider_account_model_and_compaction_compatibili
             .is_err()
         );
     }
+    let mut compatible = item.clone();
+    compatible.metadata.as_mut().unwrap().compaction_model_hash = Some("shared".into());
+    let target = ModelOutputSource {
+        model: "other".into(),
+        ..source.clone()
+    };
+    assert_eq!(
+        project(
+            vec![compatible.clone()],
+            &target,
+            ProviderCapabilities::default(),
+            Some("shared")
+        )
+        .unwrap(),
+        vec![item.item.clone()]
+    );
+    let different_owner = ModelOutputSource {
+        identity: "other-owner".into(),
+        ..target
+    };
+    assert!(
+        project(
+            vec![compatible],
+            &different_owner,
+            ProviderCapabilities::default(),
+            Some("shared")
+        )
+        .is_err()
+    );
     let unknown = ResponseItemEnvelope::new(item.item);
     assert!(
         project(
@@ -157,7 +186,10 @@ fn readable_agent_message_crosses_providers_without_summarizing_or_rewriting_his
     let projected = project(
         vec![original.clone()],
         &target,
-        ProviderCapabilities::default(),
+        ProviderCapabilities {
+            namespace_tools: false,
+            ..Default::default()
+        },
         None,
     )
     .unwrap();

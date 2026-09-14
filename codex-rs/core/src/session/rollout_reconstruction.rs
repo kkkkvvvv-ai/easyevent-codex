@@ -369,9 +369,17 @@ impl Session {
                     );
                 }
                 RolloutItem::InterAgentCommunication(communication) => {
-                    let response_item = communication.to_model_input_item();
-                    history.record_items(
-                        std::iter::once(&response_item),
+                    let response_item = codex_history::ResponseItemEnvelope {
+                        item: communication.to_model_input_item(),
+                        metadata: communication.model_source.clone().map(|source| {
+                            codex_history::CodexHarnessMetadata {
+                                model_source: Some(source),
+                                ..Default::default()
+                            }
+                        }),
+                    };
+                    history.record_annotated_items(
+                        std::slice::from_ref(&response_item),
                         turn_context.model_info().truncation_policy.into(),
                     );
                 }

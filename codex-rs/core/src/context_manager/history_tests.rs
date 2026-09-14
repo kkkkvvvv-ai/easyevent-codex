@@ -75,6 +75,7 @@ fn synthetic_tool_output_preserves_call_source() {
         .unwrap(),
     );
     expected.metadata = call.metadata.clone();
+    expected.metadata.as_mut().unwrap().synthesized_tool_output = true;
     assert_eq!(items, vec![call, expected]);
 }
 

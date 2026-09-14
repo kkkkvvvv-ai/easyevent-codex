@@ -89,7 +89,7 @@ impl Session {
             )
         } else {
             (
-                self.services.model_client(),
+                self.services.model_client.with_provider(provider.clone()),
                 provider.models_manager(
                     config.codex_home.to_path_buf(),
                     config.model_catalog.clone(),
