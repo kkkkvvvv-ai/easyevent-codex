@@ -33,11 +33,33 @@ fn provider_keys_survive_openai_logout_and_are_isolated_by_site() {
     );
     assert!(store.write(cn, "\n").is_err());
     assert_eq!(store.read(cn).unwrap(), Some("cn-key".into()));
+    store.write(cn, "replacement-key").unwrap();
+    assert_eq!(
+        (store.read(cn).unwrap(), store.read(intl).unwrap()),
+        (Some("replacement-key".into()), Some("intl-key".into()))
+    );
     assert!(store.delete(cn).unwrap());
     assert_eq!(
         (store.read(cn).unwrap(), store.read(intl).unwrap()),
         (None, Some("intl-key".into()))
     );
+}
+
+#[test]
+fn credential_storage_failure_does_not_report_success_or_expose_the_key() {
+    let unavailable_home = tempfile::NamedTempFile::new().unwrap();
+    let store = ProviderCredentialStore::new(
+        unavailable_home.path().to_path_buf(),
+        AuthCredentialsStoreMode::File,
+        AuthKeyringBackendKind::Direct,
+    );
+    let error = store
+        .write(
+            responses_provider_preset("deepseek").unwrap(),
+            "secret-storage-key",
+        )
+        .unwrap_err();
+    assert!(!error.to_string().contains("secret-storage-key"));
 }
 
 #[test]

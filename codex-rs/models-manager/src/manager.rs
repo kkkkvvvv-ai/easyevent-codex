@@ -255,6 +255,14 @@ pub struct OpenAiModelsManager {
 pub struct StaticModelsManager {
     remote_models: Vec<ModelInfo>,
     auth_manager: Option<Arc<AuthManager>>,
+    fallback: StaticModelFallback,
+}
+
+#[derive(Debug, Default)]
+enum StaticModelFallback {
+    #[default]
+    OpenAi,
+    HostedResponses,
 }
 
 impl OpenAiModelsManager {
@@ -323,6 +331,16 @@ impl StaticModelsManager {
         Self {
             remote_models: model_catalog.models,
             auth_manager,
+            fallback: StaticModelFallback::OpenAi,
+        }
+    }
+
+    /// Keep unlisted hosted model IDs conservative instead of assuming OpenAI capabilities.
+    pub fn for_hosted_responses(model_catalog: ModelsResponse) -> Self {
+        Self {
+            remote_models: model_catalog.models,
+            auth_manager: None,
+            fallback: StaticModelFallback::HostedResponses,
         }
     }
 }
@@ -591,6 +609,29 @@ impl OpenAiModelsManager {
 }
 
 impl ModelsManager for StaticModelsManager {
+    fn get_model_info<'a>(
+        &'a self,
+        model: &'a str,
+        config: &'a ModelsManagerConfig,
+    ) -> ModelsManagerFuture<'a, ModelInfo> {
+        Box::pin(async move {
+            match self.fallback {
+                StaticModelFallback::OpenAi => {
+                    construct_model_info_from_candidates(model, &self.remote_models, config)
+                }
+                StaticModelFallback::HostedResponses => {
+                    let info = self
+                        .remote_models
+                        .iter()
+                        .find(|info| info.slug == model)
+                        .cloned()
+                        .unwrap_or_else(|| crate::hosted_responses_model(model));
+                    model_info::with_config_overrides(info, config)
+                }
+            }
+        })
+    }
+
     fn get_default_model<'a>(
         &'a self,
         model: &'a Option<String>,

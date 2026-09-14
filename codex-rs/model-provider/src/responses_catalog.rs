@@ -18,7 +18,10 @@ pub fn cached_responses_models(
     preset: &ResponsesProviderPreset,
     key: &str,
 ) -> ModelsResponse {
-    let identity = format!("{:x}", Sha256::digest(key.as_bytes()));
+    let identity = format!(
+        "{:x}",
+        Sha256::digest(format!("{}\0{key}", preset.base_url).as_bytes())
+    );
     if let Ok(catalogs) = CATALOGS.get_or_init(Mutex::default).lock()
         && let Some((cached_identity, catalog)) = catalogs.get(preset.id)
         && cached_identity == &identity
@@ -43,7 +46,10 @@ pub fn cache_responses_models(
     key: &str,
     catalog: ModelsResponse,
 ) -> std::io::Result<()> {
-    let identity = format!("{:x}", Sha256::digest(key.as_bytes()));
+    let identity = format!(
+        "{:x}",
+        Sha256::digest(format!("{}\0{key}", preset.base_url).as_bytes())
+    );
     let bytes = serde_json::to_vec(&catalog)?;
     if bytes.len() > 4 * 1024 * 1024 {
         return Err(std::io::Error::other("Model catalog exceeds 4 MiB"));

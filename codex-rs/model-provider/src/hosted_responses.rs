@@ -23,11 +23,19 @@ use crate::ProviderAccountState;
 use crate::ProviderCapabilities;
 use crate::RemoteCompactionSupport;
 
-#[derive(Debug)]
 pub(crate) struct HostedResponsesProvider {
     pub(crate) info: ModelProviderInfo,
     pub(crate) preset: &'static ResponsesProviderPreset,
     pub(crate) credentials: Option<ProviderCredentialStore>,
+    pub(crate) api_key: Option<String>,
+}
+
+impl std::fmt::Debug for HostedResponsesProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HostedResponsesProvider")
+            .field("info", &self.info)
+            .finish_non_exhaustive()
+    }
 }
 
 pub fn recommended_responses_models(preset: &ResponsesProviderPreset) -> ModelsResponse {
@@ -93,6 +101,9 @@ impl ModelProvider for HostedResponsesProvider {
                 .map(|store| store.read(self.preset))
                 .transpose()?
                 .flatten()
+                // Removing the saved credential revokes the site. Rotation leaves
+                // existing threads on their original identity until they reselect it.
+                .and(self.api_key.clone())
                 .ok_or_else(|| {
                     CodexErr::InvalidRequest(format!(
                         "{} API key is missing. Use /model to connect this provider.",
@@ -112,20 +123,21 @@ impl ModelProvider for HostedResponsesProvider {
     }
 
     fn models_manager_without_cache(&self, catalog: Option<ModelsResponse>) -> SharedModelsManager {
-        Arc::new(StaticModelsManager::new(
-            None,
+        Arc::new(StaticModelsManager::for_hosted_responses(
             catalog.unwrap_or_else(|| {
                 self.credentials
                     .as_ref()
                     .and_then(|store| {
-                        store
-                            .read(self.preset)
-                            .ok()
-                            .flatten()
-                            .map(|key| crate::cached_responses_models(store, self.preset, &key))
+                        self.api_key
+                            .as_ref()
+                            .map(|key| crate::cached_responses_models(store, self.preset, key))
                     })
                     .unwrap_or_else(|| recommended_responses_models(self.preset))
             }),
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "hosted_responses_tests.rs"]
+mod tests;

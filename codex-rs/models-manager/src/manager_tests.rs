@@ -29,6 +29,15 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use tempfile::tempdir;
 
+#[tokio::test]
+async fn hosted_models_do_not_inherit_openai_metadata_for_unlisted_slugs() {
+    let manager = StaticModelsManager::for_hosted_responses(ModelsResponse { models: Vec::new() });
+    let info = manager
+        .get_model_info("custom/gpt-5.5", &ModelsManagerConfig::default())
+        .await;
+    assert_eq!(info, crate::hosted_responses_model("custom/gpt-5.5"));
+}
+
 #[path = "api_key_discovery_tests.rs"]
 mod api_key_discovery_tests;
 

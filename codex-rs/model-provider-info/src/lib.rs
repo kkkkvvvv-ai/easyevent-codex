@@ -602,10 +602,8 @@ pub fn built_in_model_providers(
     let amazon_bedrock_runtime_provider =
         P::create_amazon_bedrock_runtime_provider(/*aws*/ None);
 
-    // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Codex CLI, so we only include the OpenAI and
-    // open source ("oss") providers by default. Users are encouraged to add to
-    // `model_providers` in config.toml to add their own providers.
+    // Hosted Responses presets share the standard configuration registry.
+    // Explicit user definitions for these IDs are preserved by the merger below.
     [
         (OPENAI_PROVIDER_ID, openai_provider),
         (AMAZON_BEDROCK_PROVIDER_ID, amazon_bedrock_provider),

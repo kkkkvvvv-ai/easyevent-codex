@@ -2,7 +2,10 @@
 //! Responses and HTTP diagnostics are intentionally not echoed into setup errors.
 
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::time::Duration;
+use std::time::Instant;
 
 use codex_api::Compression;
 use codex_api::ResponseEvent;
@@ -14,21 +17,27 @@ use codex_http_client::HttpClientFactory;
 use codex_http_client::ReqwestTransport;
 use codex_model_provider_info::ResponsesProviderPreset;
 use codex_models_manager::hosted_responses_model;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelsResponse;
 use futures::StreamExt;
 use http::HeaderMap;
 use serde_json::Value;
 use serde_json::json;
+use sha2::Digest;
+use sha2::Sha256;
 
 use crate::BearerAuthProvider;
+
+type ValidationProofs = Vec<([u8; 32], Instant)>;
+static VERIFIED_KEYS: OnceLock<Mutex<ValidationProofs>> = OnceLock::new();
 
 async fn setup_client(factory: HttpClientFactory, url: String) -> Result<HttpClient, String> {
     tokio::task::spawn_blocking(move || {
         HttpClientBuilder::new()
             .without_redirects()
             .without_request_logging()
-            .connect_timeout(Duration::from_secs(10))
+            .connect_timeout(Duration::from_secs(/*secs*/ 10))
             .build_respecting_outbound_proxy_policy(&factory, &url, ClientRouteClass::Api)
             .map_err(|_| "Unable to create the provider HTTP client".to_string())
     })
@@ -49,10 +58,22 @@ pub async fn validate_responses_key(
     if model.is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
         return Err("Invalid model ID".to_string());
     }
+    let mut identity = Sha256::new();
+    for field in [preset.base_url, key.trim(), model] {
+        identity.update(field.len().to_le_bytes());
+        identity.update(field.as_bytes());
+    }
+    let identity: [u8; 32] = identity.finalize().into();
+    if let Ok(mut verified) = VERIFIED_KEYS.get_or_init(Mutex::default).lock() {
+        verified.retain(|(_, at)| at.elapsed() < Duration::from_secs(/*secs*/ 120));
+        if verified.iter().any(|(cached, _)| cached == &identity) {
+            return Ok(());
+        }
+    }
     let client = setup_client(factory, format!("{}/responses", preset.base_url)).await?;
     let mut provider = preset
         .provider_info()
-        .to_api_provider(None)
+        .to_api_provider(/*auth_mode*/ None)
         .map_err(|_| "Invalid provider endpoint".to_string())?;
     provider.retry.max_attempts = 1;
     let client = ResponsesClient::new(
@@ -60,26 +81,49 @@ pub async fn validate_responses_key(
         provider,
         Arc::new(BearerAuthProvider::new(key.trim().to_string())),
     );
-    tokio::time::timeout(Duration::from_secs(60), async {
+    let probe_tools = !preset.models.contains(&model);
+    let mut body = json!({
+        "model": model, "input": "Reply with OK.", "stream": true,
+        "store": false, "max_output_tokens": 1024,
+    });
+    if probe_tools {
+        body["input"] = json!("Call codex_connection_test with value OK.");
+        body["tools"] = json!([{
+            "type": "function", "name": "codex_connection_test",
+            "description": "A connection test; it has no side effects.",
+            "parameters": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": false},
+        }]);
+        body["tool_choice"] = json!("auto");
+    }
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 45), async {
         let mut stream = client
             .stream(
-                json!({
-                    "model": model, "input": "Reply with OK.", "stream": true,
-                    "store": false, "max_output_tokens": 1024,
-                }),
+                body,
                 HeaderMap::new(),
                 Compression::None,
-                None,
+                /*turn_state*/ None,
             )
             .await
             .map_err(setup_error)?;
         let mut events = 0usize;
+        let mut tool_completed = false;
         while let Some(event) = stream.next().await {
             events += 1;
             if events > 4096 {
                 return Err("Provider validation exceeded the response limit".to_string());
             }
-            if matches!(event.map_err(setup_error)?, ResponseEvent::Completed { .. }) {
+            let event = event.map_err(setup_error)?;
+            if let ResponseEvent::OutputItemDone(ResponseItem::FunctionCall { name, arguments, .. }) = &event {
+                tool_completed |= name == "codex_connection_test" && serde_json::from_str::<Value>(arguments).is_ok_and(|args| args == json!({"value": "OK"}));
+            }
+            if matches!(event, ResponseEvent::Completed { .. }) {
+                if probe_tools && !tool_completed {
+                    return Err("This model did not complete the Responses tool-call probe. Select a coding model with tool support.".to_string());
+                }
+                if let Ok(mut verified) = VERIFIED_KEYS.get_or_init(Mutex::default).lock() {
+                    if verified.len() >= 128 { verified.remove(0); }
+                    verified.push((identity, Instant::now()));
+                }
                 return Ok(());
             }
         }
@@ -121,7 +165,7 @@ pub async fn discover_responses_models(
     let mut response = client
         .get(url)
         .bearer_auth(key)
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(/*secs*/ 15))
         .send()
         .await
         .map_err(|_| "Unable to load provider models".to_string())?;
@@ -167,12 +211,17 @@ pub async fn discover_responses_models(
             let tools = entry
                 .get("supported_parameters")
                 .and_then(Value::as_array)
-                .is_some_and(|params| params.iter().any(|param| param == "tools"));
+                .map(|params| params.iter().any(|param| param == "tools"));
             let text = entry
                 .pointer("/architecture/output_modalities")
                 .and_then(Value::as_array)
-                .is_some_and(|modalities| modalities.iter().any(|modality| modality == "text"));
-            if !tools || !text {
+                .map(|modalities| modalities.iter().any(|modality| modality == "text"));
+            let text_input = entry
+                .pointer("/architecture/input_modalities")
+                .and_then(Value::as_array)
+                .map(|modalities| modalities.iter().any(|modality| modality == "text"));
+            // Missing capability data stays conservative and is probed before selection.
+            if tools == Some(false) || text == Some(false) || text_input == Some(false) {
                 continue;
             }
         }
