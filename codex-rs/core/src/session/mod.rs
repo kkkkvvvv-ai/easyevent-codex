@@ -236,6 +236,7 @@ mod mcp_runtime;
 pub(crate) mod model_runtime;
 pub(crate) mod multi_agents;
 mod plugin_selection;
+mod provider_handoff;
 mod provider_restore;
 mod realtime_history;
 mod retained_context;

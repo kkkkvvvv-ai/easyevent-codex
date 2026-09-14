@@ -1,6 +1,7 @@
 //! Captured transport and catalog for a turn; pending defaults cannot mutate it.
 use super::session::Session;
 use super::session::SessionConfiguration;
+use super::step_context::StepContext;
 use crate::client::ModelClient;
 use codex_model_provider::SharedModelProvider;
 use codex_models_manager::manager::SharedModelsManager;
@@ -102,5 +103,57 @@ impl Session {
             models,
             source,
         })
+    }
+
+    pub(super) async fn activate_model_runtime(
+        &self,
+        step: &StepContext,
+        cancellation: &tokio_util::sync::CancellationToken,
+    ) -> Result<()> {
+        let turn = &step.turn;
+        let source = turn
+            .model_runtime
+            .source_for(&step.settings.model_info.slug)?;
+        let _guard = super::thread_settings::acquire_persistence_lock(self).await;
+        if cancellation.is_cancelled() {
+            return Err(CodexErr::TurnAborted);
+        }
+        let previously_active = self.state.lock().await.active_model_source.is_some();
+        let mut snapshot = self.thread_settings_snapshot().await;
+        snapshot.active_model = Some(codex_protocol::protocol::ProviderModelSelection {
+            model_provider: source.provider_id.clone(),
+            model: source.model.clone(),
+        });
+        if previously_active && let Some(live) = self.live_thread() {
+            live.append_items(&[codex_history::RolloutItem::EventMsg(
+                codex_protocol::protocol::EventMsg::ThreadSettingsApplied(
+                    codex_protocol::protocol::ThreadSettingsAppliedEvent {
+                        thread_id: Some(self.thread_id()),
+                        thread_settings: snapshot.clone(),
+                    },
+                ),
+            )])
+            .await
+            .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
+            live.flush()
+                .await
+                .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
+        }
+        {
+            let mut state = self.state.lock().await;
+            state.active_model_runtime = Some(turn.model_runtime.clone());
+            state.active_model_settings = Some(step.settings.clone());
+            state.active_model_source = Some(source);
+        }
+        self.services
+            .provider_runtime
+            .store(Some(Arc::new(crate::state::ProviderRuntime {
+                model_client: turn.model_runtime.client.clone(),
+                models_manager: turn.model_runtime.models.clone(),
+            })));
+        if previously_active {
+            super::thread_settings::emit_applied(self, turn.sub_id.clone(), snapshot).await;
+        }
+        Ok(())
     }
 }
