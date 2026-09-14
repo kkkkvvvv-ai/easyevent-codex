@@ -550,6 +550,25 @@ impl CodexThread {
         self.session.checkpoint_thread_settings().await
     }
 
+    /// Switch an idle thread's model provider without replacing its history or identity.
+    pub async fn switch_model_provider(
+        &self,
+        provider_id: String,
+        settings: codex_protocol::protocol::ThreadSettingsOverrides,
+    ) -> CodexResult<()> {
+        let (reply, result) = oneshot::channel();
+        self.submit(Op::SwitchModelProvider {
+            provider_id,
+            thread_settings: Box::new(settings),
+            reply,
+        })
+        .await?;
+        result
+            .await
+            .map_err(|_| CodexErr::InvalidRequest("Provider switch was interrupted".into()))?
+            .map_err(CodexErr::InvalidRequest)
+    }
+
     fn thread_settings_update(overrides: CodexThreadSettingsOverrides) -> SessionSettingsUpdate {
         let CodexThreadSettingsOverrides {
             environments,

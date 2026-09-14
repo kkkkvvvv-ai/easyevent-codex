@@ -126,7 +126,38 @@ impl Session {
             });
         }
 
-        current.apply(updates, &current_environments)
+        let mut candidate = current.apply(updates, &current_environments)?;
+        if let Some(id) = updates.model_provider.as_ref() {
+            let mut config = candidate.original_config_do_not_use.as_ref().clone();
+            if config
+                .config_layer_stack
+                .required_model_provider()
+                .is_some_and(|required| required != id)
+            {
+                return Err(ConstraintError::InvalidValue {
+                    field_name: "model_provider",
+                    candidate: id.clone(),
+                    allowed: "administrator-required provider".to_string(),
+                    requirement_source: codex_config::RequirementSource::Unknown,
+                });
+            }
+            let info = config.model_providers.get(id).cloned().ok_or_else(|| {
+                ConstraintError::InvalidValue {
+                    field_name: "model_provider",
+                    candidate: id.clone(),
+                    allowed: "configured provider ID".to_string(),
+                    requirement_source: codex_config::RequirementSource::Unknown,
+                }
+            })?;
+            config.model_provider_id = id.clone();
+            config.model_provider = info.clone();
+            candidate.provider = codex_model_provider::create_model_provider(
+                info,
+                Some(self.services.auth_manager.clone()),
+            );
+            candidate.original_config_do_not_use = std::sync::Arc::new(config);
+        }
+        Ok(candidate)
     }
 
     pub(crate) async fn environment_ready(

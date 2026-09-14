@@ -120,7 +120,7 @@ impl ReviewerSessionFactory for PreparedSession {
                 Box::pin(run_codex_thread_interactive(
                     config,
                     Arc::clone(&self.parent.services.auth_manager),
-                    self.parent.services.models_manager.clone(),
+                    self.parent.services.models_manager().clone(),
                     Arc::clone(&self.parent),
                     Arc::clone(self.context.turn()),
                     self.context.environments().clone(),

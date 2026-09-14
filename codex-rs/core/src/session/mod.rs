@@ -1772,6 +1772,20 @@ impl Session {
         updates: SessionSettingsUpdate,
         should_commit: impl FnOnce(&SessionConfiguration, &SessionConfiguration) -> bool + Send,
     ) -> ConstraintResult<Option<SessionSettingsCommit>> {
+        let idle_guard = if updates.model_provider.is_some() {
+            let active = self.active_turn.lock().await;
+            if active.is_some() {
+                return Err(crate::config::ConstraintError::InvalidValue {
+                    field_name: "model_provider",
+                    candidate: "busy thread".to_string(),
+                    allowed: "idle thread; wait for the current turn to finish".to_string(),
+                    requirement_source: codex_config::RequirementSource::Unknown,
+                });
+            }
+            Some(active)
+        } else {
+            None
+        };
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
         let (commit, previous_config, new_config, permission_profile_changed, mcp_inputs_changed) = {
             let mut state = self.state.lock().await;
@@ -1814,6 +1828,25 @@ impl Session {
                     .turn_environments
                     .update_thread_config(&environment_config);
             }
+            if updates.model_provider.is_some() {
+                let provider = updated.provider.clone();
+                let config = &updated.original_config_do_not_use;
+                self.services.provider_runtime.store(Some(Arc::new(
+                    crate::state::ProviderRuntime {
+                        model_client: self.services.model_client().with_provider(
+                            provider.clone(),
+                            crate::provider_history::ProviderHistory::from_items(
+                                state.clone_history().raw_items(),
+                            ),
+                        ),
+                        models_manager: provider.models_manager(
+                            config.codex_home.to_path_buf(),
+                            /*config_model_catalog*/ None,
+                        ),
+                    },
+                )));
+                state.set_previous_turn_settings(None);
+            }
             state.session_configuration = updated;
             if root_service_tier_changed {
                 self.services.agent_control.set_root_service_tier(
@@ -1840,6 +1873,7 @@ impl Session {
                 mcp_inputs_changed,
             )
         };
+        drop(idle_guard);
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()

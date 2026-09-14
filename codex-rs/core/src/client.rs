@@ -191,6 +191,7 @@ fn session_telemetry_for_request(
 /// configuration is per turn and is passed explicitly to streaming/unary methods.
 #[derive(Debug)]
 struct ModelClientState {
+    provider_history: crate::provider_history::ProviderHistory,
     thread_id: ThreadId,
     provider: SharedModelProvider,
     auth_env_telemetry: AuthEnvTelemetry,
@@ -421,6 +422,41 @@ fn sideband_websocket_auth_headers(api_auth: &dyn AuthProvider) -> ApiHeaderMap 
 }
 
 impl ModelClient {
+    /// A provider switch starts a fresh transport and authentication session.
+    pub(crate) fn with_provider(
+        &self,
+        provider: SharedModelProvider,
+        history: crate::provider_history::ProviderHistory,
+    ) -> Self {
+        let old = &self.state;
+        let include_attestation = provider.supports_attestation();
+        let auth_env_telemetry =
+            collect_auth_env_telemetry(provider.info(), /*codex_api_key_env_enabled*/ false);
+        Self {
+            state: Arc::new(ModelClientState {
+                provider_history: history,
+                thread_id: old.thread_id,
+                provider,
+                auth_env_telemetry,
+                session_source: old.session_source.clone(),
+                originator: old.originator.clone(),
+                model_verbosity: old.model_verbosity,
+                content_item_kinds_enabled: old.content_item_kinds_enabled,
+                enable_request_compression: false,
+                include_timing_metrics: old.include_timing_metrics,
+                beta_features_header: old.beta_features_header.clone(),
+                concurrent_reasoning_summaries_enabled: old.concurrent_reasoning_summaries_enabled,
+                include_attestation,
+                attestation_provider: old.attestation_provider.clone(),
+                disable_websockets: AtomicBool::new(false),
+                agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
+                cached_websocket_session: StdMutex::new(WebsocketSession::default()),
+            }),
+            prompt_cache_key_override: None,
+            ..self.clone()
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     /// Creates a new session-scoped `ModelClient`.
     ///
@@ -454,6 +490,7 @@ impl ModelClient {
         let include_attestation = model_provider.supports_attestation();
         Self {
             state: Arc::new(ModelClientState {
+                provider_history: crate::provider_history::ProviderHistory::default(),
                 thread_id,
                 provider: model_provider,
                 auth_env_telemetry,
@@ -481,6 +518,17 @@ impl ModelClient {
 
     pub(crate) fn with_free_guardian_enabled(mut self, free_guardian_enabled: bool) -> Self {
         self.free_guardian_enabled = free_guardian_enabled;
+        self
+    }
+
+    pub(crate) fn with_provider_history(
+        mut self,
+        history: crate::provider_history::ProviderHistory,
+    ) -> Self {
+        let Some(state) = Arc::get_mut(&mut self.state) else {
+            unreachable!("provider history is initialized before the client is shared");
+        };
+        state.provider_history = history;
         self
     }
 
@@ -801,6 +849,7 @@ impl ModelClient {
         responses_metadata: &CodexResponsesMetadata,
     ) -> Result<ResponsesApiRequest> {
         let mut input = prompt.get_formatted_input_for_request(model_info);
+        self.state.provider_history.filter(&mut input);
         let is_openai = self.state.provider.info().is_openai();
         let (instructions, tools) = if model_info.use_responses_lite {
             // These prompt-only items are rebuilt on every request. Hash their visible payloads

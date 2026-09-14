@@ -63,7 +63,7 @@ pub(crate) fn check_prompt(
     model: &ModelInfo,
     metadata: &crate::responses_metadata::CodexResponsesMetadata,
 ) -> CodexResult<()> {
-    let request = session.services.model_client.build_responses_request(
+    let request = session.services.model_client().build_responses_request(
         prompt,
         model,
         /*effort*/ None,

@@ -652,6 +652,13 @@ pub enum Op {
         thread_settings: ThreadSettingsOverrides,
     },
 
+    /// Change an idle thread's provider through the ordered submission queue.
+    SwitchModelProvider {
+        provider_id: String,
+        thread_settings: Box<ThreadSettingsOverrides>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+
     /// Update only the named running turn, without changing future settings.
     /// The reply reports the actual publication or why it did not occur.
     TurnSettings {
@@ -944,6 +951,7 @@ impl Op {
             Self::RecoverTurn { .. } => "recover_turn",
             Self::SuspendTurnAndShutdown { .. } => "suspend_turn_and_shutdown",
             Self::ThreadSettings { .. } => "thread_settings",
+            Self::SwitchModelProvider { .. } => "switch_model_provider",
             Self::TurnSettings { .. } => "turn_settings",
             Self::InterAgentCommunication { .. } => "inter_agent_communication",
             Self::ExecApproval { .. } => "exec_approval",

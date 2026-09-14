@@ -582,6 +582,7 @@ pub(crate) struct SessionSettingsCommit {
 
 #[derive(Default, Clone)]
 pub(crate) struct SessionSettingsUpdate {
+    pub(crate) model_provider: Option<String>,
     pub(crate) step_settings: StepSettingsUpdate,
     pub(crate) environments: Option<TurnEnvironmentSelections>,
     pub(crate) runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
@@ -1581,6 +1582,7 @@ impl Session {
                 &initial_history,
             );
             let services = SessionServices {
+provider_runtime: arc_swap::ArcSwapOption::empty(),
                 // Start with an empty connection set. The initialized set is
                 // published after SessionConfigured so MCP events follow it.
                 mcp_runtime,
@@ -1651,6 +1653,7 @@ impl Session {
                     attestation_provider,
                     config.http_client_factory(),
                 )
+                .with_provider_history(crate::provider_history::ProviderHistory::from_rollout(initial_history.get_rollout_items(), &config.model_provider_id))
                 .with_free_guardian_enabled(config.free_guardian_enabled())
                 .with_session_context(
                     crate::guardian::prompt_cache_key_override_for_review_session(

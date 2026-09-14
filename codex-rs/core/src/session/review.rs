@@ -17,7 +17,7 @@ pub(super) async fn spawn_review_thread(
         .unwrap_or_else(|| parent_turn_context.model_info().slug.clone());
     let available_models = sess
         .services
-        .models_manager
+        .models_manager()
         .list_models(
             RefreshStrategy::OnlineIfUncached,
             config.http_client_factory(),
@@ -25,7 +25,7 @@ pub(super) async fn spawn_review_thread(
         .await;
     let review_model_info = sess
         .services
-        .models_manager
+        .models_manager()
         .get_model_info(&model, &config.to_models_manager_config())
         .await;
     // For reviews, disable web_search and view_image regardless of global settings.

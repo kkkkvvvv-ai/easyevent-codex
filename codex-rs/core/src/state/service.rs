@@ -44,6 +44,8 @@ use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 pub(crate) struct SessionServices {
+    /// Replaced only while the thread is idle; readers retain an immutable snapshot.
+    pub(crate) provider_runtime: ArcSwapOption<ProviderRuntime>,
     /// The single owner of live MCP connections for this thread.
     pub(crate) mcp_runtime: Arc<McpRuntime>,
     /// Immutable MCP handlers scoped to this thread's current binding.
@@ -97,4 +99,25 @@ pub(crate) struct SessionServices {
     pub(crate) code_mode_service: CodeModeService,
     pub(crate) tool_search_handler_cache: ToolSearchHandlerCache,
     pub(crate) turn_environments: Arc<ThreadEnvironments>,
+}
+
+pub(crate) struct ProviderRuntime {
+    pub(crate) model_client: ModelClient,
+    pub(crate) models_manager: SharedModelsManager,
+}
+
+impl SessionServices {
+    pub(crate) fn model_client(&self) -> ModelClient {
+        self.provider_runtime.load_full().map_or_else(
+            || self.model_client.clone(),
+            |runtime| runtime.model_client.clone(),
+        )
+    }
+
+    pub(crate) fn models_manager(&self) -> SharedModelsManager {
+        self.provider_runtime.load_full().map_or_else(
+            || self.models_manager.clone(),
+            |runtime| runtime.models_manager.clone(),
+        )
+    }
 }

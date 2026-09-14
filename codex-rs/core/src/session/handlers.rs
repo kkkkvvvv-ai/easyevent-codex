@@ -509,6 +509,19 @@ pub(super) async fn submission_loop(
                     thread_settings::update(&sess, sub.id.clone(), thread_settings).await;
                     false
                 }
+                Op::SwitchModelProvider {
+                    provider_id,
+                    thread_settings,
+                    reply,
+                } => {
+                    // Compaction builds a large future; keep it out of every submission's frame.
+                    let outcome =
+                        Box::pin(sess.switch_model_provider(provider_id, *thread_settings))
+                            .await
+                            .map_err(|error| error.to_string());
+                    let _ = reply.send(outcome);
+                    false
+                }
                 Op::TurnSettings {
                     turn_id,
                     update,

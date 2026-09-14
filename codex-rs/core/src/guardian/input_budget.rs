@@ -91,7 +91,7 @@ pub(crate) async fn finalize(
         step,
         session.get_prompt_base_instructions().await,
     );
-    let request = session.services.model_client.build_responses_request(
+    let request = session.services.model_client().build_responses_request(
         &prompt,
         model,
         /*effort*/ None,

@@ -234,7 +234,7 @@ pub(super) async fn guardian_review_session_config(
     };
     let available_models = session
         .services
-        .models_manager
+        .models_manager()
         .list_models(
             codex_models_manager::manager::RefreshStrategy::Offline,
             turn.config.http_client_factory(),
@@ -264,7 +264,7 @@ pub(super) async fn guardian_review_session_config(
             Arc::new(
                 session
                     .services
-                    .models_manager
+                    .models_manager()
                     .get_model_info(
                         guardian_model.as_str(),
                         &turn.config.to_models_manager_config(),

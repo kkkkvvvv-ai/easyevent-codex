@@ -175,7 +175,7 @@ pub(crate) async fn run_turn(
     drain_async_hook_results(&sess, &turn_context, /*before_user_prompt*/ true).await;
 
     let mut client_session =
-        prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
+        prewarmed_client_session.unwrap_or_else(|| sess.services.model_client().new_session());
     // TODO(ccunningham): Pre-turn compaction runs before context updates and the
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
@@ -1312,7 +1312,7 @@ async fn maybe_run_previous_model_inline_compact(
     let previous_model = previous_turn_settings.model;
     let previous_model_turn_context = Arc::new(
         turn_context
-            .with_model(previous_model.clone(), &sess.services.models_manager)
+            .with_model(previous_model.clone(), &sess.services.models_manager())
             .await,
     );
 
@@ -2776,7 +2776,7 @@ async fn try_run_sampling_request(
             ResponseEvent::ModelsEtag(etag) => {
                 // Update internal state with latest models etag
                 sess.services
-                    .models_manager
+                    .models_manager()
                     .refresh_if_new_etag(etag, turn_context.config.http_client_factory())
                     .await;
             }

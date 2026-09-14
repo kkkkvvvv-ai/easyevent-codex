@@ -1016,7 +1016,7 @@ impl Session {
         let model_info = session_configuration
             .step_settings
             .resolve_model_info(
-                self.services.models_manager.as_ref(),
+                self.services.models_manager().as_ref(),
                 &session_configuration.model_info_overrides,
                 self.features.enabled(Feature::Personality),
             )
@@ -1086,7 +1086,7 @@ impl Session {
             self.services.main_execve_wrapper_exe.as_ref(),
             per_turn_config,
             step_settings,
-            &self.services.models_manager,
+            &self.services.models_manager(),
             self.services
                 .network_proxy
                 .load_full()

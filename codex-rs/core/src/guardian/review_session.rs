@@ -349,7 +349,7 @@ async fn run_review_on_session(
     let model_info = params
         .parent_session
         .services
-        .models_manager
+        .models_manager()
         .get_model_info(
             params.model.as_str(),
             &params.spawn_config.to_models_manager_config(),
