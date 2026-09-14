@@ -565,6 +565,15 @@ pub(crate) struct App {
     runtime_permission_profile_override: Option<RuntimePermissionProfileOverride>,
     /// In-flight remote selections; confirmed settings live in each task's server snapshot.
     pending_server_profiles: HashMap<ThreadId, PermissionProfileSelection>,
+    pending_model_selections: HashMap<ThreadId, codex_app_server_protocol::ModelSelection>,
+    pending_model_default_writes: HashMap<
+        ThreadId,
+        (
+            String,
+            Option<codex_protocol::openai_models::ReasoningEffort>,
+        ),
+    >,
+    provider_selection: providers::ProviderSelectionState,
 
     pub(crate) file_search: FileSearchManager,
 

@@ -46,6 +46,8 @@ impl App {
             }
             self.abort_thread_event_listener(thread_id);
             self.pending_server_profiles.remove(&thread_id);
+            self.pending_model_selections.remove(&thread_id);
+            self.pending_model_default_writes.remove(&thread_id);
         }
     }
 
@@ -1184,6 +1186,23 @@ impl App {
             self.apply_thread_settings_to_cached_session(thread_id, &notification.thread_settings)
                 .await;
             if self
+                .pending_model_selections
+                .get(&thread_id)
+                .is_some_and(|selection| {
+                    selection.model_provider == notification.thread_settings.model_provider
+                        && selection.model == notification.thread_settings.model
+                })
+            {
+                self.pending_model_selections.remove(&thread_id);
+                if let Some((model, effort)) = self.pending_model_default_writes.remove(&thread_id)
+                    && model == notification.thread_settings.model
+                {
+                    self.app_event_tx
+                        .send(AppEvent::PersistModelSelection { model, effort });
+                }
+                self.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+            }
+            if self
                 .pending_server_profiles
                 .get(&thread_id)
                 .is_some_and(|selected| {
@@ -1513,6 +1532,8 @@ impl App {
 
         let thread_id = session.thread_id;
         self.pending_server_profiles.remove(&thread_id);
+        self.pending_model_selections.remove(&thread_id);
+        self.pending_model_default_writes.remove(&thread_id);
         if self.primary_thread_id != Some(thread_id) {
             self.recap.reset_for_new_thread(Instant::now());
         }

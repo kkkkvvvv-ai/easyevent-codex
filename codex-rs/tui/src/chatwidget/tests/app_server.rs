@@ -1951,3 +1951,41 @@ async fn permission_discovery_invalidates_on_thread_settings_and_uses_updated_cw
     };
     assert_eq!(thread_cwd, Some(test_path_buf("/tmp/thread-settings")));
 }
+
+#[tokio::test]
+async fn provider_selection_preserves_plan_and_displays_pending_model() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(Some("gpt-5.2")).await;
+    let mut settings = thread_settings_for_test("deepseek-flash", ThreadId::new()).thread_settings;
+    settings.model_provider = "deepseek".into();
+    settings.active_model = Some(codex_app_server_protocol::ModelSelection {
+        model_provider: "openai".into(),
+        model: "gpt-5.2".into(),
+    });
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.on_thread_settings_updated(
+        codex_app_server_protocol::ThreadSettingsUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            thread_settings: settings.clone(),
+        },
+    );
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+    assert_eq!(chat.current_collaboration_mode().model(), "deepseek-flash");
+    insta::assert_snapshot!(
+        "provider_pending_model",
+        chat.model_selection_display_name()
+    );
+    settings.active_model = Some(codex_app_server_protocol::ModelSelection {
+        model_provider: "deepseek".into(),
+        model: "deepseek-flash".into(),
+    });
+    settings.collaboration_mode.mode = ModeKind::Default;
+    chat.on_thread_settings_updated(
+        codex_app_server_protocol::ThreadSettingsUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            thread_settings: settings,
+        },
+    );
+    assert_eq!(chat.current_model(), "deepseek-flash");
+    insta::assert_snapshot!("provider_active_model", chat.model_selection_display_name());
+}

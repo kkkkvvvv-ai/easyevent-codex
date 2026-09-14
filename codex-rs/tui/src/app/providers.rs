@@ -26,6 +26,14 @@ use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ReasoningEffort;
 use serde_json::json;
 
+#[derive(Default)]
+pub(super) struct ProviderSelectionState {
+    pub(super) pending: std::collections::HashMap<ThreadId, uuid::Uuid>,
+    pub(super) latest: std::collections::HashMap<Option<ThreadId>, uuid::Uuid>,
+    pub(super) catalog_request: Option<(Option<ThreadId>, String, uuid::Uuid)>,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
 #[derive(Debug)]
 pub(crate) enum ProviderSetupEvent {
     Open,
@@ -52,6 +60,7 @@ pub(crate) enum ProviderSetupEvent {
     },
     ModelsLoaded(
         Option<ThreadId>,
+        uuid::Uuid,
         ModelProviderInfo,
         Result<Vec<Model>, String>,
     ),
@@ -63,13 +72,19 @@ pub(crate) enum ProviderSetupEvent {
     },
     Selected(
         Option<ThreadId>,
+        uuid::Uuid,
         String,
         String,
         Result<WriteStatus, String>,
     ),
     Delete(ModelProviderInfo),
     Deleted(Option<ThreadId>, Result<(), String>),
-    CatalogReloaded(Option<ThreadId>, Result<Vec<Model>, String>),
+    CatalogReloaded(
+        Option<ThreadId>,
+        uuid::Uuid,
+        String,
+        Result<Vec<Model>, String>,
+    ),
     CatalogWarning(Option<ThreadId>, String),
 }
 
@@ -106,6 +121,7 @@ impl App {
         let thread_id = self.chat_widget.thread_id();
         match event {
             ProviderSetupEvent::Open => {
+                self.provider_selection.catalog_request = None;
                 tokio::spawn(async move {
                     let result = handle
                         .request_typed::<ModelProviderListResponse>(
@@ -261,6 +277,9 @@ impl App {
                 }
             }
             ProviderSetupEvent::Models { provider, mode } => {
+                let catalog_id = uuid::Uuid::new_v4();
+                self.provider_selection.catalog_request =
+                    Some((thread_id, provider.id.clone(), catalog_id));
                 tokio::spawn(async move {
                     let result = async {
                         let mut models = Vec::new();
@@ -302,11 +321,16 @@ impl App {
                     }
                     .await;
                     tx.send(AppEvent::from(ProviderSetupEvent::ModelsLoaded(
-                        thread_id, provider, result,
+                        thread_id, catalog_id, provider, result,
                     )));
                 });
             }
-            ProviderSetupEvent::ModelsLoaded(origin, provider, result) if origin == thread_id => {
+            ProviderSetupEvent::ModelsLoaded(origin, catalog_id, provider, result)
+                if origin == thread_id
+                    && self.provider_selection.catalog_request.as_ref()
+                        == Some(&(origin, provider.id.clone(), catalog_id)) =>
+            {
+                self.provider_selection.catalog_request = None;
                 match result {
                     Ok(models) => {
                         let mut items: Vec<SelectionItem> = models
@@ -419,9 +443,38 @@ impl App {
                 model,
                 effort,
             } => {
+                self.provider_selection.catalog_request = None;
+                let selection_id = uuid::Uuid::new_v4();
+                self.provider_selection
+                    .latest
+                    .insert(thread_id, selection_id);
+                if let Some(thread_id) = thread_id {
+                    self.provider_selection
+                        .pending
+                        .insert(thread_id, selection_id);
+                    self.pending_model_selections.insert(
+                        thread_id,
+                        codex_app_server_protocol::ModelSelection {
+                            model_provider: provider.id.clone(),
+                            model: model.clone(),
+                        },
+                    );
+                }
                 self.chat_widget
-                    .add_info_message(format!("Switching to {} / {model}…", provider.name), None);
-                tokio::spawn(async move {
+                    .set_queue_autosend_suppressed(/*suppressed*/ true);
+                self.chat_widget.add_info_message(
+                    format!("Selecting {} / {model} for the next turn…", provider.name),
+                    None,
+                );
+                let previous = self.provider_selection.task.take();
+                let collaboration_mode = self
+                    .chat_widget
+                    .effective_collaboration_mode()
+                    .with_updates(Some(model.clone()), Some(effort.clone()), None);
+                self.provider_selection.task = Some(tokio::spawn(async move {
+                    if let Some(previous) = previous {
+                        let _ = previous.await;
+                    }
                     let result = async {
                         if let Some(thread_id) = thread_id {
                             handle
@@ -431,6 +484,7 @@ impl App {
                                         params: ThreadSettingsUpdateParams {
                                             thread_id: thread_id.to_string(),
                                             model_provider: Some(provider.id.clone()),
+                                            collaboration_mode: Some(collaboration_mode),
                                             model: Some(model.clone()),
                                             effort: effort.clone(),
                                             ..Default::default()
@@ -455,27 +509,40 @@ impl App {
                                 crate::config_update::clear_config_value("service_tier"),
                             ],
                         )
-                        .await
-                        .map_err(|error| {
-                            format!("Provider selected, but saving defaults failed: {error}")
-                        })?;
+                        .await;
+                        let response = match response {
+                            Ok(response) => response,
+                            Err(error) => {
+                                tx.send(AppEvent::from(ProviderSetupEvent::CatalogWarning(thread_id, format!("Provider selected for this task, but saving global defaults failed: {error}"))));
+                                return Ok(WriteStatus::Ok);
+                            }
+                        };
                         Ok(response.status)
                     }
                     .await;
                     tx.send(AppEvent::from(ProviderSetupEvent::Selected(
                         thread_id,
+                        selection_id,
                         provider.id,
                         model,
                         result,
                     )));
-                });
+                }));
             }
-            ProviderSetupEvent::Selected(origin, provider, model, result)
-                if origin == thread_id =>
-            {
+            ProviderSetupEvent::Selected(origin, selection_id, provider, model, result) => {
+                if self.provider_selection.latest.get(&origin) != Some(&selection_id) {
+                    return;
+                }
+                if let Some(origin) = origin {
+                    self.provider_selection.pending.remove(&origin);
+                }
+                if origin != thread_id {
+                    return;
+                }
                 match result {
                     Ok(status) => {
-                        if status != WriteStatus::OkOverridden {
+                        self.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+                        if origin.is_some() || status != WriteStatus::OkOverridden {
                             self.config.model_provider_id = provider.clone();
                             if let Some(info) = self.config.model_providers.get(&provider) {
                                 self.config.model_provider = info.clone();
@@ -494,7 +561,7 @@ impl App {
                                 .request_typed::<ModelListResponse>(ClientRequest::ModelList {
                                     request_id: request_id(),
                                     params: ModelListParams {
-                                        provider_id: Some(provider),
+                                        provider_id: Some(provider.clone()),
                                         catalog_mode: Some(ModelCatalogMode::All),
                                         refresh: Some(false),
                                         limit: Some(500),
@@ -505,7 +572,10 @@ impl App {
                                 .map(|response| response.data)
                                 .map_err(|error| error.to_string());
                             tx.send(AppEvent::from(ProviderSetupEvent::CatalogReloaded(
-                                thread_id, result,
+                                thread_id,
+                                selection_id,
+                                provider,
+                                result,
                             )));
                         });
                     }
@@ -538,7 +608,11 @@ impl App {
                 ),
                 Err(error) => self.chat_widget.add_error_message(error),
             },
-            ProviderSetupEvent::CatalogReloaded(origin, result) if origin == thread_id => {
+            ProviderSetupEvent::CatalogReloaded(origin, selection_id, provider, result)
+                if origin == thread_id
+                    && self.provider_selection.latest.get(&origin) == Some(&selection_id)
+                    && self.config.model_provider_id == provider =>
+            {
                 if let Ok(models) = result {
                     let models = models
                         .into_iter()
@@ -555,7 +629,6 @@ impl App {
             ProviderSetupEvent::Listed(..)
             | ProviderSetupEvent::Configured(..)
             | ProviderSetupEvent::ModelsLoaded(..)
-            | ProviderSetupEvent::Selected(..)
             | ProviderSetupEvent::Deleted(..)
             | ProviderSetupEvent::CatalogReloaded(..)
             | ProviderSetupEvent::CatalogWarning(..) => {}

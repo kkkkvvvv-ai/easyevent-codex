@@ -1752,7 +1752,8 @@ impl App {
                     return Ok(AppRunControl::Continue);
                 }
                 let model_changed = self.chat_widget.current_model() != model
-                    || self.chat_widget.current_collaboration_mode().model() != model;
+                    || self.chat_widget.current_collaboration_mode().model() != model
+                    || self.active_thread_id.is_some_and(|id| self.pending_model_selections.contains_key(&id));
                 if model_changed {
                     self.chat_widget.set_model(&model);
                     self.sync_active_thread_model_setting(app_server, model, /*effort*/ None)
@@ -1806,7 +1807,8 @@ impl App {
                 self.app_event_tx.send(AppEvent::SettingsSelectionSettled);
             }
             AppEvent::SettingsSelectionSettled => {
-                if self.chat_widget.no_modal_or_popup_active()
+                if !self.chat_widget.thread_id().is_some_and(|id| self.provider_selection.pending.contains_key(&id) || self.pending_model_selections.contains_key(&id))
+                    && self.chat_widget.no_modal_or_popup_active()
                     && !self
                         .chat_widget
                         .thread_id()
@@ -1870,7 +1872,8 @@ impl App {
                     return Ok(AppRunControl::Continue);
                 }
                 let model_changed = self.chat_widget.current_model() != model
-                    || self.chat_widget.current_collaboration_mode().model() != model;
+                    || self.chat_widget.current_collaboration_mode().model() != model
+                    || self.active_thread_id.is_some_and(|id| self.pending_model_selections.contains_key(&id));
                 let default_effort =
                     self.on_apply_advanced_reasoning(model.as_str(), effort.clone());
                 if model_changed {
@@ -1890,6 +1893,12 @@ impl App {
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
 
+                if let (Some(thread_id), Some(default_effort)) = (self.active_thread_id, default_effort.as_ref())
+                    && self.pending_model_selections.contains_key(&thread_id)
+                {
+                    self.pending_model_default_writes.insert(thread_id, (model, Some(default_effort.clone())));
+                    return Ok(AppRunControl::Continue);
+                }
                 if let Some(default_effort) = default_effort.as_ref()
                     && let Err(err) = self.persist_model_defaults(
                         app_server.request_handle(),
@@ -2143,6 +2152,14 @@ impl App {
                 }
             }
             AppEvent::PersistModelSelection { model, effort } => {
+                if let Some(thread_id) = self.active_thread_id
+                    && let Some(selection) = self.pending_model_selections.get(&thread_id)
+                {
+                    if selection.model == model {
+                        self.pending_model_default_writes.insert(thread_id, (model, effort));
+                    }
+                    return Ok(AppRunControl::Continue);
+                }
                 match self.persist_model_defaults(
                     app_server.request_handle(),
                     crate::config_update::build_model_selection_edits(

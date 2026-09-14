@@ -426,8 +426,8 @@ impl ChatWidget {
     }
 
     pub(super) fn refresh_model_display(&mut self) {
-        let effective = self.effective_collaboration_mode();
-        self.session_header.set_model(effective.model());
+        let model_label = self.model_selection_display_name();
+        self.session_header.set_model(&model_label);
         // Keep composer paste affordances aligned with the currently effective model.
         self.sync_image_paste_enabled();
         self.sync_service_tier_commands();
@@ -456,6 +456,15 @@ impl ChatWidget {
         self.invalidate_permission_discovery();
         let cwd_changed = self.config.cwd != settings.cwd;
         self.apply_thread_settings_cwd(settings.cwd.clone());
+        if self.config.model_provider_id != settings.model_provider {
+            self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
+                Some(settings.model.clone()),
+                Some(settings.effort.clone()),
+                None,
+            );
+            self.model_popup_request_id = None;
+        }
+        self.active_model_selection = settings.active_model.clone();
         self.config.model_provider_id = settings.model_provider.clone();
         if let Some(provider) = self.config.model_providers.get(&settings.model_provider) {
             self.config.model_provider = provider.clone();
@@ -545,6 +554,24 @@ impl ChatWidget {
         });
         self.update_collaboration_mode_indicator();
         self.refresh_model_dependent_surfaces();
+    }
+
+    pub(super) fn model_selection_display_name(&self) -> String {
+        match self.active_model_selection.as_ref() {
+            Some(active)
+                if active.model != self.current_model()
+                    || active.model_provider != self.config.model_provider_id =>
+            {
+                format!(
+                    "{} / {} (next: {} / {})",
+                    active.model_provider,
+                    active.model,
+                    self.config.model_provider_id,
+                    self.current_model()
+                )
+            }
+            _ => self.model_display_name().to_string(),
+        }
     }
 
     pub(super) fn model_display_name(&self) -> &str {

@@ -125,6 +125,7 @@ impl ChatWidget {
             has_codex_backend_auth,
             model_catalog,
             model_popup_request_id: None,
+            active_model_selection: None,
             permission_popup_request_id: None,
             worktree_popup_request_id: None,
             permission_profiles_menu_opened: false,

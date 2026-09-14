@@ -52,6 +52,17 @@ impl App {
                         .map(codex_app_server_protocol::ApprovalsReviewer::to_core),
                     display_label: profile_id.clone(),
                 });
+        if let Some(thread_id) = self.active_thread_id {
+            self.pending_model_selections.insert(
+                thread_id,
+                codex_app_server_protocol::ModelSelection {
+                    model_provider: self.chat_widget.config_ref().model_provider_id.clone(),
+                    model: params.model.clone().unwrap_or_default(),
+                },
+            );
+            self.chat_widget
+                .set_queue_autosend_suppressed(/*suppressed*/ true);
+        }
         let settings_updated = self.send_thread_settings_update(app_server, params).await;
         if settings_updated
             && let (Some(thread_id), Some(selection)) =
@@ -245,7 +256,9 @@ impl App {
 }
 
 fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: &ThreadSettings) {
-    if settings.collaboration_mode.mode == ModeKind::Default {
+    if settings.collaboration_mode.mode == ModeKind::Default
+        || session.model_provider_id != settings.model_provider
+    {
         session.model = settings.model.clone();
         session.reasoning_effort = settings.effort.clone();
     }
