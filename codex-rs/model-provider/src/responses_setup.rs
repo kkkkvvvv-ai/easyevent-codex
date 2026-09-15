@@ -1,6 +1,7 @@
 //! Provider setup uses the same SSE decoder as normal model requests.
 //! Responses and HTTP diagnostics are intentionally not echoed into setup errors.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -193,15 +194,12 @@ pub async fn discover_responses_models(
         .and_then(Value::as_array)
         .ok_or("Provider did not return a model list")?;
     let mut catalog = crate::recommended_responses_models(preset);
+    let mut seen = HashSet::new();
     for entry in entries.iter().take(4096) {
         let Some(id) = entry.get("id").and_then(Value::as_str) else {
             continue;
         };
-        if id.is_empty()
-            || id.len() > 256
-            || id.chars().any(char::is_control)
-            || catalog.models.iter().any(|model| model.slug == id)
-        {
+        if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) || !seen.insert(id) {
             continue;
         }
         if preset.family == "HY" && !id.starts_with("hy") {
@@ -222,10 +220,16 @@ pub async fn discover_responses_models(
                 .map(|modalities| modalities.iter().any(|modality| modality == "text"));
             // Missing capability data stays conservative and is probed before selection.
             if tools == Some(false) || text == Some(false) || text_input == Some(false) {
+                catalog.models.retain(|model| model.slug != id);
                 continue;
             }
         }
-        let mut model = hosted_responses_model(id);
+        // Enrich recommendations as well as discovered models. A recommendation is
+        // a display preference, not authoritative remote capability metadata.
+        let existing = catalog.models.iter().position(|model| model.slug == id);
+        let mut model = existing
+            .map(|index| catalog.models[index].clone())
+            .unwrap_or_else(|| hosted_responses_model(id));
         if let Some(context) = entry
             .get("context_length")
             .and_then(Value::as_i64)
@@ -234,15 +238,23 @@ pub async fn discover_responses_models(
             model.context_window = Some(context);
             model.max_context_window = Some(context);
         }
-        if entry
+        if let Some(modalities) = entry
             .pointer("/architecture/input_modalities")
             .and_then(Value::as_array)
-            .is_some_and(|modalities| modalities.iter().any(|modality| modality == "image"))
         {
-            model.input_modalities = vec![InputModality::Text, InputModality::Image];
+            model.input_modalities = vec![InputModality::Text];
+            if modalities.iter().any(|modality| modality == "image") {
+                model.input_modalities.push(InputModality::Image);
+            }
         }
-        model.priority = catalog.models.len() as i32;
-        catalog.models.push(model);
+        if let Some(index) = existing {
+            catalog.models[index] = model;
+        } else {
+            catalog.models.push(model);
+        }
+    }
+    for (priority, model) in catalog.models.iter_mut().enumerate() {
+        model.priority = priority as i32;
     }
     Ok(catalog)
 }

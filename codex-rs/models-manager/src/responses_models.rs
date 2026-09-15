@@ -59,11 +59,18 @@ pub fn hosted_responses_model(slug: &str) -> ModelInfo {
             model.input_modalities.push(InputModality::Image);
             &[ReasoningEffort::None, ReasoningEffort::High]
         }
-        _ => &[],
+        _ => {
+            // An unknown window is an estimate, not a verified server limit.
+            model.used_fallback_model_metadata = true;
+            &[]
+        }
     };
-    model.max_context_window = model.context_window;
+    model.max_context_window = if model.used_fallback_model_metadata {
+        None
+    } else {
+        model.context_window
+    };
     if !efforts.is_empty() {
-        model.supports_reasoning_summary_parameter = true;
         model.default_reasoning_level = Some(ReasoningEffort::High);
         model.supported_reasoning_levels = efforts
             .iter()

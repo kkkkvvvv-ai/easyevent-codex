@@ -249,3 +249,75 @@ async fn discovery_filters_non_tool_openrouter_models_and_keeps_recommendations(
     expected.models.push(unknown);
     assert_eq!(catalog, expected);
 }
+
+#[tokio::test]
+async fn discovery_enriches_recommendations_and_deduplicates_remote_models() {
+    let server = MockServer::start().await;
+    let preset = ResponsesProviderPreset {
+        base_url: Box::leak(server.uri().into_boxed_str()),
+        ..*responses_provider_preset("openrouter").unwrap()
+    };
+    let first = preset.models[0];
+    let second = preset.models[1];
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": [
+            {"id": first, "context_length": 131072, "supported_parameters": ["tools"],
+             "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text"]}},
+            {"id": first, "context_length": 1},
+            {"id": second, "supported_parameters": [],
+             "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]}},
+            {"id": "vendor/other", "context_length": 65536}
+        ]})))
+        .mount(&server)
+        .await;
+    let catalog = discover_responses_models(
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+        &preset,
+        "directory-key",
+    )
+    .await
+    .unwrap();
+    let mut recommended = hosted_responses_model(first);
+    recommended.context_window = Some(131072);
+    recommended.max_context_window = Some(131072);
+    recommended.input_modalities = vec![InputModality::Text, InputModality::Image];
+    let mut other = hosted_responses_model("vendor/other");
+    other.priority = 1;
+    other.context_window = Some(65536);
+    other.max_context_window = Some(65536);
+    assert_eq!(
+        catalog,
+        ModelsResponse {
+            models: vec![recommended, other]
+        }
+    );
+}
+
+#[tokio::test]
+async fn discovery_replaces_stale_recommended_modalities() {
+    let server = MockServer::start().await;
+    let preset = ResponsesProviderPreset {
+        base_url: Box::leak(server.uri().into_boxed_str()),
+        ..*responses_provider_preset("deepseek").unwrap()
+    };
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": [
+            {"id": "deepseek-flash", "context_length": 65536,
+             "architecture": {"input_modalities": ["text"]}}
+        ]})))
+        .mount(&server)
+        .await;
+    let catalog = discover_responses_models(
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+        &preset,
+        "directory-key",
+    )
+    .await
+    .unwrap();
+    let mut expected = crate::recommended_responses_models(&preset);
+    expected.models[0].context_window = Some(65536);
+    expected.models[0].max_context_window = Some(65536);
+    expected.models[0].input_modalities = vec![InputModality::Text];
+    assert_eq!(catalog, expected);
+}
