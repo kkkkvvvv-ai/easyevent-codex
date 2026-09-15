@@ -1,0 +1,62 @@
+name: Provider optimization checks
+
+on:
+  push:
+    branches:
+      - codex/provider-optimization-20260915
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-optimization-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  provider-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Archive the exact reviewed source
+        shell: bash
+        run: |
+          git archive --format=tar.gz --output="$RUNNER_TEMP/provider-source.tar.gz" HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/provider-source.sha"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: provider-source-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/provider-source.tar.gz
+            ${{ runner.temp }}/provider-source.sha
+          retention-days: 1
+          if-no-files-found: error
+      - uses: ./.github/actions/setup-ci
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libcap-dev libasound2-dev bubblewrap
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          components: rustfmt, clippy
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: nextest
+          version: 0.9.103
+      - name: Provider regression tests
+        working-directory: codex-rs
+        run: just test -p codex-model-provider-info -p codex-model-provider
+      - name: Scoped Clippy
+        working-directory: codex-rs
+        run: just clippy -p codex-model-provider-info -p codex-model-provider
+      - name: Rust formatting
+        working-directory: codex-rs
+        run: cargo fmt -- --config imports_granularity=Item --check
