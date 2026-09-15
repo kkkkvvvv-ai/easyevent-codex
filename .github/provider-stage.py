@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Validate one explicitly supplied provider optimization stage without credentials."""
 
+import base64
+import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -24,7 +27,14 @@ def main():
     (result / "base.sha").write_text(base + "\n")
     (result / "base.commit").write_bytes(git(source, "cat-file", "commit", "HEAD"))
     patch = result / "input.patch"
-    patch.write_text(stage["patch"])
+    patch_bytes = stage["patch"].encode()
+    if stage.get("patch_encoding") == "gzip-base64":
+        patch_bytes = gzip.decompress(base64.b64decode(patch_bytes, validate=True))
+    if len(patch_bytes) > 2 * 1024 * 1024:
+        raise SystemExit("Candidate exceeds the patch size limit")
+    if stage.get("patch_sha256") and hashlib.sha256(patch_bytes).hexdigest() != stage["patch_sha256"]:
+        raise SystemExit("Candidate patch digest does not match")
+    patch.write_bytes(patch_bytes)
     subprocess.run(["git", "apply", "--index", "--check", str(patch)], cwd=source, check=True)
     subprocess.run(["git", "apply", "--index", str(patch)], cwd=source, check=True)
     expected = set(git(source, "diff", "--cached", "--name-only").decode().splitlines())
