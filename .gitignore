@@ -94,3 +94,17 @@ CHANGELOG.ignore.md
 # Python bytecode files
 __pycache__/
 *.pyc
+
+# CODESYS engineering projects and mirror exports stay local
+/projects/
+*.project
+*.projectarchive
+*.library
+*.compiled-library
+*.project.~*
+**/*_mcp_mirror/
+**/mcp-mirror/
+**/.codesys-mirror.json
+**/.codesys-sync/
+**/.codesys-context/
+**/.folder_meta.json
